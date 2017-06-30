@@ -3,45 +3,54 @@ package org.firas.util.validator
 /**
  *
  */
-class StringValidator<T: Any>(private val onlyOneError: Boolean) : IValidator<String, T> {
+class StringValidator<T: Any> private constructor(
+        private val onlyOneError: Boolean,
+        private val pattern: Regex? = null,
+        private val message: T? = null,
+        private val max: Int? = null,
+        private val maxMessage: T? = null,
+        private val min: Int? = null,
+        private val minMessage: T? = null
+) : IValidator<MatchResult?, T> {
 
-    constructor(onlyOneError: Boolean, pattern: String, message: T) : this(onlyOneError) {
-        this.pattern = pattern
-        this.message = message
-    }
+    constructor(onlyOneError: Boolean, pattern: Regex, message: T):
+            this(onlyOneError, pattern, message, null, null, null, null)
 
-    constructor(onlyOneError: Boolean, min: Int, minMessage: T) : this(onlyOneError) {
-        this.min = min
-        this.minMessage = minMessage
-    }
+    constructor(onlyOneError: Boolean, max: Int, maxMessage: T):
+            this(onlyOneError, null, null, max, maxMessage, null, null)
 
-    constructor(onlyOneError: Boolean, min: Int?, minMessage: T?,
-                max: Int, maxMessage: T) : this(onlyOneError) {
-        this.min = min
-        this.minMessage = minMessage
-        this.max = max
-        this.maxMessage = maxMessage
-    }
+    constructor(onlyOneError: Boolean, max: Int, maxMessage: T, min: Int, minMessage: T):
+            this(onlyOneError, null, null, max, maxMessage, min, minMessage)
 
-    override fun isValid(str: String?): Triple<Boolean, String, List<T>> {
-        this.min ?.let {
-
+    override fun isValid(str: String?): Triple<Boolean, MatchResult?, List<T>> {
+        val messages: MutableList<T> = ArrayList()
+        var converted: MatchResult? = null
+        var isValid = true
+        this.pattern ?.let {
+            if (null == str) {
+                messages.add(checkNotNull(message))
+                return Triple(false, null, messages)
+            }
+            converted = this.pattern.matchEntire(str)
+            if (null == converted) {
+                messages.add(checkNotNull(message))
+                if (onlyOneError) return Triple(false, null, messages)
+                isValid = false
+            }
         }
         this.max ?.let {
-
+            if (null != str && str.length > this.max) {
+                messages.add(checkNotNull(maxMessage))
+                if (onlyOneError) return Triple(false, null, messages)
+                isValid = false
+            }
         }
-        this.pattern ?.let {
-
+        this.min ?.let {
+            if (this.min > 0 && null == str || null != str && str.length < this.min) {
+                messages.add(checkNotNull(minMessage))
+            }
         }
-        return false
+        return Triple(isValid, if (isValid) converted else null, messages)
     }
 
-    private var min: Int? = null
-    private var max: Int? = null
-    private var minMessage: T? = null
-    private var maxMessage: T? = null
-    private var pattern: String? = null
-    private var message: T? = null
-    private val messages: List<T> = ArrayList()
-    private var converted: String? = null
 }
