@@ -3,7 +3,7 @@ package org.firas.util.validator
 /**
  *
  */
-class StringValidator<T: Any> private constructor(
+open class StringValidator<T: Any> private constructor(
         private val onlyOneError: Boolean,
         private val pattern: Regex? = null,
         private val message: T? = null,

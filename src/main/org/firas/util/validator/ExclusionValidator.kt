@@ -3,7 +3,7 @@ package org.firas.util.validator
 /**
  *
  */
-class ExclusionValidator<T: Any>(
+open class ExclusionValidator<T: Any>(
         private val onlyOneError: Boolean,
         private val domain: Array<String>,
         private val message: T

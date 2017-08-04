@@ -3,7 +3,7 @@ package org.firas.util.validator
 /**
  *
  */
-class IntegerValidator<T: Any> (
+open class IntegerValidator<T: Any> (
         private val onlyOneError: Boolean,
         private val message: T,
         private val min: Int? = null,
