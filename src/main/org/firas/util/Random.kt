@@ -5,20 +5,31 @@ package org.firas.util
  */
 open class Random(var seed:Long) {
 
-    private val multiplier: Long = 0x5_DEEC_E66DL
-    private val addend: Long = 0xBL
-    private val mask: Long = 0xFFFF_FFFF_FFFFL // (1L << 48) - 1
+    companion object {
 
-    private val FLOAT_UNIT: Float = 1f / (1 shl 24)
-    private val DOUBLE_UNIT: Double = 1.0 / (1L shl 53)
+        private val multiplier: Long = 0x5_DEEC_E66DL
+        private val addend: Long = 0xBL
+        private val mask: Long = 0xFFFF_FFFF_FFFFL // (1L << 48) - 1
+            
+        private val FLOAT_UNIT: Float = 1f / (1 shl 24)
+        private val DOUBLE_UNIT: Double = 1.0 / (1L shl 53)
 
-    // IllegalArgumentException messages
-    internal val BadBound: String = "bound must be positive"
-    internal val BadRange: String = "bound must be greater than origin"
-    internal val BadSize: String = "size must be non-negative"
+        // IllegalArgumentException messages
+        internal val BadBound: String = "bound must be positive"
+        internal val BadRange: String = "bound must be greater than origin"
+        internal val BadSize: String = "size must be non-negative"
 
-    private var haveNextGaussian = false
-    private var nextNextGaussian: Double = 0.0
+        private var seedUniquifier = 8682522807148012L
+
+        private fun getSeedUniquifier(): Long {
+            // L'Ecuyer, "Tables of Linear Congruential Generators of
+            // Different Sizes and Good Lattice Structure", 1999
+            seedUniquifier = seedUniquifier * 181783497276652981L
+            return seedUniquifier
+        }
+    }
+
+    public constructor(): this(getSeedUniquifier() xor Clock.SystemClock.millis())
 
     init {
         seed = initialScramble(seed)
@@ -169,4 +180,7 @@ open class Random(var seed:Long) {
         }
         return buffer.toString()
     }
+
+    private var haveNextGaussian = false
+    private var nextNextGaussian: Double = 0.0
 }
