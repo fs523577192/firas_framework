@@ -69,6 +69,6 @@ interface TemporalField {
     fun isSupportedBy(temporal: TemporalAccessor): Boolean
     fun rangeRefinedBy(temporal: TemporalAccessor): ValueRange
     fun getFrom(temporal: TemporalAccessor): Long
-    fun <R: Temporal> adjustInto(temporal: R, newValue: Long): R
+    // fun <R: Temporal> adjustInto(temporal: R, newValue: Long): R
 
 }

@@ -61,6 +61,8 @@
  */
 package org.firas.time
 
+import org.firas.lang.Math
+
 /**
  * A time-zone offset from Greenwich/UTC, such as {@code +02:00}.
  * <p>
@@ -99,7 +101,7 @@ package org.firas.time
  *
  * @implSpec
  */
-class ZoneOffset(val totalSeconds) {
+class ZoneOffset(val totalSeconds: Int) {
 
     companion object {
         /**
@@ -137,10 +139,51 @@ class ZoneOffset(val totalSeconds) {
          * @return the zone-offset, not null
          * @throws DateTimeException if the offset ID is invalid
          */
-        fun of(offsetId: String) {
+        fun of(offsetId: String): ZoneOffset {
             if ("Z".equals(offsetId)) return UTC
+            var hours: Int
+            var minutes: Int
+            val seconds: Int
             when (offsetId.length) {
+                2 -> {
+                    hours = parseNumber(offsetId[0] + "0" + offsetId[1], 1, false)
+                    minutes = 0
+                    seconds = 0
+                }
+                3 -> {
+                    hours = parseNumber(offsetId, 1, false)
+                    minutes = 0
+                    seconds = 0
+                }
+                5 -> {
+                    hours = parseNumber(offsetId, 1, false)
+                    minutes = parseNumber(offsetId, 3, false)
+                    seconds = 0
+                }
+                6 -> {
+                    hours = parseNumber(offsetId, 1, false)
+                    minutes = parseNumber(offsetId, 4, true)
+                    seconds = 0
+                }
+                7 -> {
+                    hours = parseNumber(offsetId, 1, false)
+                    minutes = parseNumber(offsetId, 3, false)
+                    seconds = parseNumber(offsetId, 5, false)
+                }
+                9 -> {
+                    hours = parseNumber(offsetId, 1, false)
+                    minutes = parseNumber(offsetId, 4, true)
+                    seconds = parseNumber(offsetId, 7, true)
+                }
+                else -> {
+                    throw DateTimeException("Invalid ID for ZoneOffset, invalid format: " + offsetId)
+                }
             }
+            val first = offsetId[0]
+            if (first != '+' && first != '-')
+                throw DateTimeException("Invalid ID for ZoneOffset, plus/minus not found when expected: " + offsetId)
+            return if (first == '-') ofHoursMinutesSeconds(-hours, -minutes, -seconds)
+                    else ofHoursMinutesSeconds(hours, minutes, seconds)
         }
 
         /**
@@ -156,24 +199,71 @@ class ZoneOffset(val totalSeconds) {
             if (Math.abs(totalSeconds) > MAX_SECONDS) {
                 throw DateTimeException("Zone offset not in valid range: -18:00 to +18:00")
             }
-            if (totalSeconds % (15 * SECONDS_PER_MINUTE) == 0) {
+            if (totalSeconds % (15 * LocalTime.SECONDS_PER_MINUTE) == 0) {
                 var result = SECONDS_CACHE.get(totalSeconds)
             }
             return ZoneOffset(totalSeconds)
+        }
+
+        //-----------------------------------------------------------------------
+        /**
+         * Obtains an instance of {@code ZoneOffset} using an offset in hours.
+         *
+         * @param hours  the time-zone offset in hours, from -18 to +18
+         * @return the zone-offset, not null
+         * @throws DateTimeException if the offset is not in the required range
+         */
+        fun ofHours(hours: Int): ZoneOffset {
+            return ofHoursMinutesSeconds(hours, 0, 0)
+        }
+
+        /**
+         * Obtains an instance of {@code ZoneOffset} using an offset in
+         * hours and minutes.
+         * <p>
+         * The sign of the hours and minutes components must match.
+         * Thus, if the hours is negative, the minutes must be negative or zero.
+         * If the hours is zero, the minutes may be positive, negative or zero.
+         *
+         * @param hours  the time-zone offset in hours, from -18 to +18
+         * @param minutes  the time-zone offset in minutes, from 0 to &plusmn;59, sign matches hours
+         * @return the zone-offset, not null
+         * @throws DateTimeException if the offset is not in the required range
+         */
+        fun ofHoursMinutes(hours: Int, minutes: Int): ZoneOffset {
+            return ofHoursMinutesSeconds(hours, minutes, 0)
+        }
+
+        /**
+         * Obtains an instance of {@code ZoneOffset} using an offset in
+         * hours, minutes and seconds.
+         * <p>
+         * The sign of the hours, minutes and seconds components must match.
+         * Thus, if the hours is negative, the minutes and seconds must be negative or zero.
+         *
+         * @param hours  the time-zone offset in hours, from -18 to +18
+         * @param minutes  the time-zone offset in minutes, from 0 to &plusmn;59, sign matches hours and seconds
+         * @param seconds  the time-zone offset in seconds, from 0 to &plusmn;59, sign matches hours and minutes
+         * @return the zone-offset, not null
+         * @throws DateTimeException if the offset is not in the required range
+         */
+        fun ofHoursMinutesSeconds(hours: Int, minutes: Int, seconds: Int): ZoneOffset {
+            validate(hours, minutes, seconds)
+            return ofTotalSeconds(totalSeconds(hours, minutes, seconds))
         }
 
         private fun buildId(totalSeconds: Int): String {
             if (0 == totalSeconds) return "Z"
             val absTotalSeconds = Math.abs(totalSeconds)
             val buf = StringBuilder()
-            val absHours = absTotalSeconds / SECONDS_PER_HOUR
-            val absMinutes = (absTotalSeconds / SECONDS_PER_MINUTE) % MINUTES_PER_HOUR
-            buf.append(totalSeconds < 0 ? "-" : "+")
-                    .append(absHours < 10 ? "0" : "").append(absHours)
-                    .append(absMinutes < 10 ? ":0" : ":").append(absMinutes)
-            val absSeconds = absTotalSeconds % SECONDS_PER_MINUTE
+            val absHours = absTotalSeconds / LocalTime.SECONDS_PER_HOUR
+            val absMinutes = (absTotalSeconds / LocalTime.SECONDS_PER_MINUTE) % LocalTime.MINUTES_PER_HOUR
+            buf.append(if (totalSeconds < 0) "-" else "+")
+                    .append(if (absHours < 10) "0" else "").append(absHours)
+                    .append(if (absMinutes < 10) ":0" else ":").append(absMinutes)
+            val absSeconds = absTotalSeconds % LocalTime.SECONDS_PER_MINUTE
             if (absSeconds != 0) {
-                buf.append(absSeconds < 10 ? ":0" : ":").append(absSeconds)
+                buf.append(if (absSeconds < 10) ":0" else ":").append(absSeconds)
             }
             return buf.toString()
         }
@@ -187,15 +277,15 @@ class ZoneOffset(val totalSeconds) {
          * @return the parsed number, from 0 to 99
          */
         private fun parseNumber(offsetId: CharSequence, pos: Int, precededByColon: Boolean): Int {
-            if (precededByColon && offsetId.charAt(pos - 1) != ':') {
+            if (precededByColon && offsetId[pos - 1] != ':') {
                 throw DateTimeException("Invalid ID for ZoneOffset, colon not found when expected: " + offsetId)
             }
-            val ch1 = offsetId.charAt(pos)
-            val ch2 = offsetId.charAt(pos + 1)
+            val ch1 = offsetId[pos]
+            val ch2 = offsetId[pos + 1]
             if (ch1 < '0' || ch1 > '9' || ch2 < '0' || ch2 > '9') {
                 throw DateTimeException("Invalid ID for ZoneOffset, non numeric characters found: " + offsetId)
             }
-            return (ch1 - 48) * 10 + (ch2 - 48)
+            return (ch1.toInt() - 48) * 10 + (ch2.toInt() - 48)
         }
 
         /**
@@ -207,19 +297,60 @@ class ZoneOffset(val totalSeconds) {
          * @return the total in seconds
          */
         private fun totalSeconds(hours: Int, minutes: Int, seconds: Int): Int {
-            return hours * SECONDS_PER_HOUR + minutes * SECONDS_PER_MINUTE + seconds
+            return hours * LocalTime.SECONDS_PER_HOUR +
+                    minutes * LocalTime.SECONDS_PER_MINUTE + seconds
         }
 
+        /**
+         * Validates the offset fields.
+         *
+         * @param hours  the time-zone offset in hours, from -18 to +18
+         * @param minutes  the time-zone offset in minutes, from 0 to &plusmn;59
+         * @param seconds  the time-zone offset in seconds, from 0 to &plusmn;59
+         * @throws DateTimeException if the offset is not in the required range
+         */
+        private fun validate(hours: Int, minutes: Int, seconds: Int) {
+            if (hours < -18 || hours > 18) {
+                throw DateTimeException("Zone offset hours not in valid range: value " + hours +
+                        " is not in the range -18 to 18")
+            }
+            if (hours > 0) {
+                if (minutes < 0 || seconds < 0) {
+                    throw DateTimeException("Zone offset minutes and seconds must be positive because hours is positive")
+                }
+            } else if (hours < 0) {
+                if (minutes > 0 || seconds > 0) {
+                    throw DateTimeException("Zone offset minutes and seconds must be negative because hours is negative")
+                }
+            } else if ((minutes > 0 && seconds < 0) || (minutes < 0 && seconds > 0)) {
+                throw DateTimeException("Zone offset minutes and seconds must have the same sign")
+            }
+            if (Math.abs(minutes) > 59) {
+                throw DateTimeException("Zone offset minutes not in valid range: abs(value) " +
+                        Math.abs(minutes) + " is not in the range 0 to 59")
+            }
+            if (Math.abs(seconds) > 59) {
+                throw DateTimeException("Zone offset seconds not in valid range: abs(value) " +
+                        Math.abs(seconds) + " is not in the range 0 to 59")
+            }
+            if (Math.abs(hours) == 18 && (Math.abs(minutes) > 0 || Math.abs(seconds) > 0)) {
+                throw DateTimeException("Zone offset not in valid range: -18:00 to +18:00")
+            }
+        }
+
+        /** The abs maximum seconds */
+        private val MAX_SECONDS = 18 * LocalTime.SECONDS_PER_HOUR
+
         /** Cache of time-zone offset by offset in seconds. */
-        private val SECONDS_CACHE = MutableMap()
+        private val SECONDS_CACHE = HashMap<Int, ZoneOffset>(16)
 
         /** Cache of time-zone offset by ID. */
-        private val ID_CACHE = MutableMap()
+        private val ID_CACHE = HashMap<String, ZoneOffset>(16)
     }
 
+    var id: String
     init {
-        id = buildId(totalSeconds);
+        id = buildId(totalSeconds)
     }
 
-    val id: String
 }
