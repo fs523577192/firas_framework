@@ -1,13 +1,14 @@
 package org.firas.util
 
+import org.firas.lang.Integer
 import org.firas.lang.ULongComparator
 
 class UUID(val mostSigBits: Long, val leastSigBits: Long): Comparable<UUID> {
 
     companion object {
 
-        enum Type {
-            UNKONWN,
+        enum class Type {
+            UNKNOWN,
             TIME_BASED,
             DCE,
             NAME_BASED_MD5,
@@ -15,10 +16,12 @@ class UUID(val mostSigBits: Long, val leastSigBits: Long): Comparable<UUID> {
             NAME_BASED_SHA1
         }
 
+        private val comparator = ULongComparator()
+
         /** Returns val represented by the specified number of hex digits. */
         private fun digits(v: Long, digits: Int): String {
-            val hi = 1L.shl(digits.shl(2)) // 1L << (4 * digits)
-            return hi.or(v.and(hi - 1)).toHexString().substring(1)
+            val temp = Integer.toHexString(v)
+            return temp.substring(temp.length - digits)
         }
     }
 
@@ -57,7 +60,7 @@ class UUID(val mostSigBits: Long, val leastSigBits: Long): Comparable<UUID> {
      * @return The timestamp of this {@code UUID}.
      */
     fun timestamp(): Long {
-        if (version() != Type.TIME_BASED.ordinal())
+        if (version() != Type.TIME_BASED.ordinal)
             throw UnsupportedOperationException(" Not a time-based UUID")
         return mostSigBits.and(0x0FFFL).shl(48).or(
                 mostSigBits.shr(16).and(0xFFFFL).shl(32)).or(
@@ -67,18 +70,18 @@ class UUID(val mostSigBits: Long, val leastSigBits: Long): Comparable<UUID> {
     /**
      * https://github.com/cowtowncoder/java-uuid-generator/blob/3.0/src/main/java/com/fasterxml/uuid/UUIDComparator.java
      */
-    fun compareTo(val other: UUID): Int {
+    override fun compareTo(other: UUID): Int {
         val type = version()
         var diff = type - other.version()
         if (0 != diff) return diff
 
-        if (Type.TIME_BASED.ordinal() == type)
-            diff = ULongComparator.compare(timestamp(), other.timestamp())
+        if (Type.TIME_BASED.ordinal == type)
+            diff = comparator.compare(timestamp(), other.timestamp())
         else
-            diff = ULongComparator.compare(mostSigBits, other.mostSigBits)
+            diff = comparator.compare(mostSigBits, other.mostSigBits)
 
         return if (0 != diff) diff
-                else ULongComparator.compare(leastSigBits, other.leastSigBits)
+                else comparator.compare(leastSigBits, other.leastSigBits)
     }
 
     /**
