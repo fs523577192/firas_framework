@@ -101,6 +101,15 @@ class Integer {
             return n
         }
 
+        fun numberOfLeadingZeros(i: Long): Int {
+            var hi = i.ushr(SIZE).toInt()
+            val lo = i.toInt()
+            if (0 == hi) {
+                return SIZE + numberOfLeadingZeros(lo)
+            }
+            return numberOfLeadingZeros(hi)
+        }
+
         /**
          * Returns the number of zero bits following the lowest-order ("rightmost")
          * one-bit in the two's complement binary representation of the specified
@@ -161,5 +170,41 @@ class Integer {
             i += i.ushr(16)
             return i and 0x3f
         }
+
+        fun toHexString(b: Byte): String {
+            val v = b.toInt()
+            val result = StringBuilder()
+            return result.append(HEX_DIGITS[v.ushr(4).and(0xF)])
+                    .append(HEX_DIGITS[v.and(0xF)])
+                    .toString()
+        }
+
+        fun toHexString(v: Short): String {
+            val v = v.toInt()
+            val result = StringBuilder()
+            return result.append(HEX_DIGITS[v.ushr(12).and(0xF)])
+                    .append(HEX_DIGITS[v.ushr(8).and(0xF)])
+                    .append(HEX_DIGITS[v.ushr(4).and(0xF)])
+                    .append(HEX_DIGITS[v.and(0xF)])
+                    .toString()
+        }
+
+        fun toHexString(v: Int): String {
+            val hi = v.ushr(16).toShort()
+            val lo = v.toShort()
+            return toHexString(hi) + toHexString(lo)
+        }
+
+        fun toHexString(v: Long): String {
+            val one = v.ushr(48).toShort()
+            val two = v.ushr(SIZE).toShort()
+            val three = v.ushr(16).toShort()
+            val four = v.toShort()
+            return toHexString(one) + toHexString(two) +
+                    toHexString(three) + toHexString(four)
+        }
+
+        private val HEX_DIGITS = charArrayOf('0', '1', '2', '3',
+                '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F')
     }
 }
