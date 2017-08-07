@@ -369,10 +369,108 @@ class BigInteger private constructor(
         }
 
         /**
+         * Adds the contents of the int arrays x and y. This method allocates
+         * a new int array to hold the answer and returns a reference to that
+         * array.
+         */
+        private fun add(x: IntArray, y: IntArray): IntArray {
+            var x = x
+            var y = y
+            // If x is shorter, swap the two arrays
+            if (x.size < y.size) {
+                val tmp = x
+                x = y
+                y = tmp
+            }
+
+            var xIndex = x.size
+            var yIndex = y.size
+            val result = IntArray(xIndex)
+            var sum = 0L
+            if (yIndex == 1) {
+                xIndex -= 1
+                sum = x[xIndex].toLong().and(LONG_MASK) + y[0].toLong().and(LONG_MASK)
+                result[xIndex] = sum.toInt()
+            } else {
+                // Add common parts of both numbers
+                while (yIndex > 0) {
+                    xIndex -= 1
+                    yIndex -= 1
+                    sum = x[xIndex].toLong().and(LONG_MASK) +
+                          y[yIndex].toLong().and(LONG_MASK) + sum.ushr(32)
+                    result[xIndex] = sum.toInt()
+                }
+            }
+            // Copy remainder of longer number while carry propagation is required
+            var carry = sum.ushr(32) != 0L
+            while (xIndex > 0 && carry) {
+                xIndex -= 1
+                result[xIndex] = x[xIndex] + 1
+                carry = result[xIndex] == 0
+            }
+
+            // Copy remainder of longer number
+            while (xIndex > 0) {
+                xIndex -= 1
+                result[xIndex] = x[xIndex]
+            }
+
+            // Grow result if necessary
+            if (carry) {
+                val bigger = IntArray(result.size + 1)
+                bigger[0] = 0x01
+                for (i in 0 .. (result.size - 1)) {
+                    bigger[i + 1] = result[i]
+                }
+                return bigger
+            }
+            return result
+        }
+
+        /**
+         * Subtracts the contents of the second int arrays (little) from the
+         * first (big).  The first int array (big) must represent a larger number
+         * than the second.  This method allocates the space necessary to hold the
+         * answer.
+         */
+        private fun subtract(big: IntArray, little: IntArray): IntArray {
+            var bigIndex = big.size
+            val result = IntArray(bigIndex)
+            var littleIndex = little.size
+            var difference = 0L
+
+            // Subtract common parts of both numbers
+            while (littleIndex > 0) {
+                bigIndex -= 1
+                littleIndex -= 1
+                difference = big[bigIndex].toLong().and(LONG_MASK) -
+                        little[littleIndex].toLong().and(LONG_MASK) +
+                        difference.shr(32)
+                result[bigIndex] = difference.toInt()
+            }
+
+            // Subtract remainder of longer number while borrow propagates
+            var borrow = difference.shr(32) != 0L
+            while (bigIndex > 0 && borrow) {
+                bigIndex -= 1
+                result[bigIndex] = big[bigIndex] - 1
+                borrow = result[bigIndex] == -1
+            }
+
+            // Copy remainder of longer number
+            while (bigIndex > 0) {
+                bigIndex -= 1
+                result[bigIndex] = big[bigIndex]
+            }
+
+            return result
+        }
+
+        /**
          * Left shift int array a up to len by n bits. Returns the array that
          * results from the shift since space may have to be reallocated.
          */
-        fun leftShift(a: IntArray, len: Int, n: Int): IntArray {
+        private fun leftShift(a: IntArray, len: Int, n: Int): IntArray {
             val nInts = n.ushr(5)
             val nBits = n and 0x1F
             val bitsInHighWord = Integer.highestOneBit(a[0])
@@ -395,7 +493,7 @@ class BigInteger private constructor(
         }
 
         // shifts a up to len right n bits assumes no leading zeros, 0<n<32
-        fun primitiveRightShift(a: IntArray, len: Int, n: Int) {
+        internal fun primitiveRightShift(a: IntArray, len: Int, n: Int) {
             val n2 = 32 - n
             var i = len - 1
             var c = a[i]
@@ -409,7 +507,7 @@ class BigInteger private constructor(
         }
 
         // shifts a up to len left n bits assumes no leading zeros, 0<=n<32
-        fun primitiveLeftShift(a: IntArray, len: Int, n: Int) {
+        internal fun primitiveLeftShift(a: IntArray, len: Int, n: Int) {
             if (len == 0 || n == 0)
                 return
 
@@ -534,6 +632,129 @@ class BigInteger private constructor(
         }
 
         /**
+         * Multiplies two BigIntegers using the Karatsuba multiplication
+         * algorithm.  This is a recursive divide-and-conquer algorithm which is
+         * more efficient for large numbers than what is commonly called the
+         * "grade-school" algorithm used in multiplyToLen.  If the numbers to be
+         * multiplied have length n, the "grade-school" algorithm has an
+         * asymptotic complexity of O(n^2).  In contrast, the Karatsuba algorithm
+         * has complexity of O(n^(log2(3))), or O(n^1.585).  It achieves this
+         * increased performance by doing 3 multiplies instead of 4 when
+         * evaluating the product.  As it has some overhead, should be used when
+         * both numbers are larger than a certain threshold (found
+         * experimentally).
+         *
+         * See:  http://en.wikipedia.org/wiki/Karatsuba_algorithm
+         */
+        private fun multiplyKaratsuba(x: BigInteger, y: BigInteger): BigInteger {
+            val xlen = x.mag.size
+            val ylen = y.mag.size
+
+            // The number of vals in each half of the number.
+            val half = (Math.max(xlen, ylen) + 1).shl(1)
+
+            // xl and yl are the lower halves of x and y respectively,
+            // xh and yh are the upper halves.
+            val xl = x.getLower(half)
+            val xh = x.getUpper(half)
+            val yl = y.getLower(half)
+            val yh = y.getUpper(half)
+
+            val p1 = xh.multiply(yh)
+            val p2 = xl.multiply(yl)
+
+            val p3 = xh.add(xl).multiply(yh.add(yl))
+
+            // result = p1 * 2^(32*2*half) + (p3 - p1 - p2) * 2^(32*half) + p2
+            val result = p1.shiftLeft(32 * half).add(
+                    p3.subtract(p1).subtract(p2)).shiftLeft(32 * half).add(p2)
+
+            return if (x.signum != y.signum) result.negate() else result
+        }
+
+        /**
+         * Multiplies two BigIntegers using a 3-way Toom-Cook multiplication
+         * algorithm.  This is a recursive divide-and-conquer algorithm which is
+         * more efficient for large numbers than what is commonly called the
+         * "grade-school" algorithm used in multiplyToLen.  If the numbers to be
+         * multiplied have length n, the "grade-school" algorithm has an
+         * asymptotic complexity of O(n^2).  In contrast, 3-way Toom-Cook has a
+         * complexity of about O(n^1.465).  It achieves this increased asymptotic
+         * performance by breaking each number into three parts and by doing 5
+         * multiplies instead of 9 when evaluating the product.  Due to overhead
+         * (additions, shifts, and one division) in the Toom-Cook algorithm, it
+         * should only be used when both numbers are larger than a certain
+         * threshold (found experimentally).  This threshold is generally larger
+         * than that for Karatsuba multiplication, so this algorithm is generally
+         * only used when numbers become significantly larger.
+         *
+         * The algorithm used is the "optimal" 3-way Toom-Cook algorithm outlined
+         * by Marco Bodrato.
+         *
+         *  See: http://bodrato.it/toom-cook/
+         *       http://bodrato.it/papers/#WAIFI2007
+         *
+         * "Towards Optimal Toom-Cook Multiplication for Univariate and
+         * Multivariate Polynomials in Characteristic 2 and 0." by Marco BODRATO;
+         * In C.Carlet and B.Sunar, Eds., "WAIFI'07 proceedings", p. 116-133,
+         * LNCS #4547. Springer, Madrid, Spain, June 21-22, 2007.
+         *
+         */
+        private fun multiplyToomCook3(a: BigInteger, b: BigInteger): BigInteger {
+            val alen = a.mag.size
+            val blen = b.mag.size
+
+            val largest = Math.max(alen, blen)
+            // k is the size (in ints) of the lower-order slices.
+            val k = (largest + 2) / 3   // Equal to ceil(largest/3)
+
+            // r is the size (in ints) of the highest-order slice.
+            val r = largest - k.shl(1)
+
+            // Obtain slices of the numbers. a2 and b2 are the most significant
+            // bits of the numbers a and b, and a0 and b0 the least significant.
+            val a2 = a.getToomSlice(k, r, 0, largest)
+            val a1 = a.getToomSlice(k, r, 1, largest)
+            val a0 = a.getToomSlice(k, r, 2, largest)
+            val b2 = b.getToomSlice(k, r, 0, largest)
+            val b1 = b.getToomSlice(k, r, 1, largest)
+            val b0 = b.getToomSlice(k, r, 2, largest)
+
+            val v0 = a0.multiply(b0)
+            var da1 = a2.add(a0)
+            var db1 = b2.add(b0)
+            val vm1 = da1.subtract(a1).multiply(db1.subtract(b1))
+            da1 = da1.add(a1)
+            db1 = db1.add(b1)
+            val v1 = da1.multiply(db1)
+            val v2 = da1.add(a2).shiftLeft(1).subtract(a0).multiply(
+                 db1.add(b2).shiftLeft(1).subtract(b0))
+            val vinf = a2.multiply(b2)
+
+            // The algorithm requires two divisions by 2 and one by 3.
+            // All divisions are known to be exact, that is, they do not produce
+            // remainders, and all results are positive.  The divisions by 2 are
+            // implemented as right shifts which are relatively efficient, leaving
+            // only an exact division by 3, which is done by a specialized
+            // linear-time algorithm.
+            var t2 = v2.subtract(vm1).exactDivideBy3()
+            var tm1 = v1.subtract(vm1).shiftRight(1)
+            var t1 = v1.subtract(v0)
+            t2 = t2.subtract(t1).shiftRight(1)
+            t1 = t1.subtract(tm1).subtract(vinf)
+            t2 = t2.subtract(vinf.shiftLeft(1))
+            tm1 = tm1.subtract(t2)
+
+            // Number of bits to shift left.
+            var ss = k.shl(5)
+
+            val result = vinf.shiftLeft(ss).add(t2).shiftLeft(ss)
+                    .add(t1).shiftLeft(ss).add(tm1).shiftLeft(ss).add(v0)
+
+            return if (a.signum != b.signum) result.negate() else result
+        }
+
+        /**
          * Squares the contents of the int array x. The result is placed into the
          * int array z.  The contents of x are not changed.
          */
@@ -628,6 +849,46 @@ class BigInteger private constructor(
         return if (signum >= 0) this else negate()
     }
 
+    /**
+     * Returns a BigInteger whose value is {@code (this + val)}.
+     *
+     * @param  v value to be added to this BigInteger.
+     * @return {@code this + val}
+     */
+    fun add(v: BigInteger): BigInteger {
+        if (0 == v.signum) return this
+        if (0 == signum) return v
+        if (v.signum == signum) return BigInteger(signum, add(mag, v.mag))
+
+        val cmp = compareMagnitude(v)
+        if (0 == cmp) return ZERO
+        val resultMag = if (cmp > 0) subtract(mag, v.mag)
+                           else subtract(v.mag, mag)
+
+        return BigInteger(if (cmp == signum) 1 else -1,
+                trustedStripLeadingZeroInts(resultMag))
+    }
+
+    /**
+     * Returns a BigInteger whose value is {@code (this - val)}.
+     *
+     * @param  v value to be subtracted from this BigInteger.
+     * @return {@code this - val}
+     */
+    fun subtract(v: BigInteger): BigInteger {
+        if (v.signum == 0) return this
+        if (signum == 0) return v.negate()
+        if (v.signum != signum) return BigInteger(signum, add(mag, v.mag))
+
+        val cmp = compareMagnitude(v)
+        if (0 == cmp) return ZERO
+        val resultMag = if (cmp > 0) subtract(mag, v.mag)
+                else subtract(v.mag, mag)
+
+        return BigInteger(if (cmp == signum) 1 else -1,
+                trustedStripLeadingZeroInts(resultMag))
+    }
+
     override fun toByte(): Byte {
         return toInt().toByte()
     }
@@ -716,7 +977,7 @@ class BigInteger private constructor(
      * method returns a negative BigInteger if and only if this and val are
      * both negative.)
      *
-     * @param val value to be AND'ed with this BigInteger.
+     * @param v value to be AND'ed with this BigInteger.
      * @return {@code this & val}
      */
     fun and(v: BigInteger): BigInteger {
@@ -733,7 +994,7 @@ class BigInteger private constructor(
      * returns a negative BigInteger if and only if either this or val is
      * negative.)
      *
-     * @param val value to be OR'ed with this BigInteger.
+     * @param v value to be OR'ed with this BigInteger.
      * @return {@code this | val}
      */
     fun or(v: BigInteger): BigInteger {
@@ -750,7 +1011,7 @@ class BigInteger private constructor(
      * returns a negative BigInteger if and only if exactly one of this and
      * val are negative.)
      *
-     * @param val value to be XOR'ed with this BigInteger.
+     * @param v value to be XOR'ed with this BigInteger.
      * @return {@code this ^ val}
      */
     fun xor(v: BigInteger): BigInteger {
@@ -784,7 +1045,7 @@ class BigInteger private constructor(
      * BigInteger if and only if {@code this} is negative and {@code val} is
      * positive.)
      *
-     * @param val value to be complemented and AND'ed with this BigInteger.
+     * @param v value to be complemented and AND'ed with this BigInteger.
      * @return {@code this & ~val}
      */
     fun andNot(v: BigInteger): BigInteger {
@@ -966,9 +1227,60 @@ class BigInteger private constructor(
             val resultSign = if (signum == v.signum) 1 else -1
             if (1 == v.mag.size) return multiplyByInt(mag, v.mag[0], resultSign)
             if (1 == mag.size) return multiplyByInt(v.mag, mag[0], resultSign)
+
+            val result = multiplyToLen(mag, mag.size, v.mag, v.mag.size, null)
+            return BigInteger(resultSign, trustedStripLeadingZeroInts(result))
         }
+        if (mag.size < TOOM_COOK_THRESHOLD && v.mag.size < TOOM_COOK_THRESHOLD) {
+            return multiplyKaratsuba(this, v)
+        }
+        return multiplyToomCook3(this, v)
     }
 
+    /**
+     * Multiplies int arrays x and y to the specified lengths and places
+     * the result into z. There will be no leading zeros in the resultant array.
+     */
+    private fun multiplyToLen(x: IntArray, xlen: Int,
+                              y: IntArray, ylen: Int, z: IntArray?): IntArray {
+        val xstart = xlen - 1;
+        val ystart = ylen - 1;
+
+        val z: IntArray = if (null == z || z.size < (xlen + ylen))
+                IntArray(xlen + ylen) else z
+
+        var carry = 0L
+        var j = ystart
+        var k = ystart + xstart + 1
+        while (j >= 0) {
+            val product = y[j].toLong().and(LONG_MASK) *
+                           x[xstart].toLong().and(LONG_MASK) + carry
+            z[k] = product.toInt()
+            carry = product ushr 32
+            j -= 1
+            k -= 1
+        }
+        z[xstart] = carry.toInt()
+
+        var i = xstart - 1
+        while (i >= 0) {
+            carry = 0L
+            var j = ystart
+            var k = ystart + xstart + 1
+            while (j >= 0) {
+                val product = y[j].toLong().and(LONG_MASK) *
+                               x[i].toLong().and(LONG_MASK) +
+                               z[k].toLong().and(LONG_MASK) + carry
+                z[k] = product.toInt()
+                carry = product ushr 32
+                j -= 1
+                k -= 1
+            }
+            z[i] = carry.toInt()
+            i -= 1
+        }
+        return z
+    }
 
     /**
      * Returns a BigInteger whose value is <tt>(this<sup>exponent</sup>)</tt>.
@@ -1055,7 +1367,7 @@ class BigInteger private constructor(
         // Perform exponentiation using repeated squaring trick
         while (workingExponent != 0) {
             if (workingExponent.and(1) == 1) {
-                answer = answer.multiply(partToSquare);
+                answer = answer.multiply(partToSquare)
             }
 
             workingExponent = workingExponent.ushr(1)
@@ -1079,7 +1391,7 @@ class BigInteger private constructor(
      * Compares the magnitude array of this BigInteger with the specified
      * BigInteger's. This is the version of compareTo ignoring sign.
      *
-     * @param val BigInteger whose magnitude array to be compared.
+     * @param v BigInteger whose magnitude array to be compared.
      * @return -1, 0 or 1 as this magnitude array is less than, equal to or
      *         greater than the magnitude aray for the specified BigInteger's.
      */
@@ -1124,7 +1436,7 @@ class BigInteger private constructor(
 
     /* Returns an int of sign bits */
     private fun signInt(): Int {
-        return if (signum < 0) -1 else 0;
+        return if (signum < 0) -1 else 0
     }
 
     /**
@@ -1380,6 +1692,39 @@ class BigInteger private constructor(
         if (mag.size <= n) return ZERO
         val upperInts = mag.copyOfRange(0, mag.size - n)
         return BigInteger(1, trustedStripLeadingZeroInts(upperInts))
+    }
+
+    /**
+     * Does an exact division (that is, the remainder is known to be zero)
+     * of the specified number by 3.  This is used in Toom-Cook
+     * multiplication.  This is an efficient algorithm that runs in linear
+     * time.  If the argument is not exactly divisible by 3, results are
+     * undefined.  Note that this is expected to be called with positive
+     * arguments only.
+     */
+    private fun exactDivideBy3(): BigInteger {
+        val result = IntArray(mag.size)
+        var borrow = 0L
+        var i = mag.size - 1
+        while (i >= 0) {
+            val x = mag[i].toLong() and LONG_MASK
+            val w = x - borrow
+            borrow = if (borrow > x) 1L else 0L
+
+            // 0xAAAAAAAB is the modular inverse of 3 (mod 2^32).  Thus,
+            // the effect of this is to divide by 3 (mod 2^32).
+            // This is much faster than division on most architectures.
+            val q = (w * 0xAAAAAAABL) and LONG_MASK
+            result[i] = q.toInt()
+
+            // Now check the borrow. The second check can of course be
+            // eliminated if the first fails.
+            if (q >= 0x55555556L) {
+                borrow += 1
+                if (q >= 0xAAAAAAABL) borrow += 1
+            }
+        }
+        return BigInteger(signum, trustedStripLeadingZeroInts(result))
     }
 
 
