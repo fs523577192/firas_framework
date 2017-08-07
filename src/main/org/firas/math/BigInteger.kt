@@ -428,6 +428,51 @@ class BigInteger private constructor(
         }
 
         /**
+         * Adds the contents of the int array x and long value val. This
+         * method allocates a new int array to hold the answer and returns
+         * a reference to that array.  Assumes x.length &gt; 0 and val is
+         * non-negative
+         */
+        private fun add(x: IntArray, v: Long): IntArray {
+            var sum = 0L
+            var xIndex = x.size
+            val highWord = v.ushr(32)
+            var result: IntArray
+            if (0L == highWord) {
+                result = IntArray(xIndex)
+                xIndex -= 1
+                sum = x[xIndex].toLong().and(LONG_MASK) + v
+                result[xIndex] = sum.toInt()
+            } else {
+                if (1 == xIndex) {
+                    sum = v + x[0].toLong().and(LONG_MASK)
+                    return intArrayOf(sum.ushr(32).toInt(), sum.toInt())
+                }
+                result = IntArray(xIndex)
+                xIndex -= 1
+                sum = x[xIndex].toLong().and(LONG_MASK) + v.and(LONG_MASK)
+                xIndex -= 1
+                sum = x[xIndex].toLong().and(LONG_MASK) + highWord + sum.ushr(32)
+            }
+            // Copy remainder of longer number while carry propagation is required
+            var carry = sum.ushr(32) != 0L
+            while (xIndex > 0 && carry) {
+                xIndex -= 1
+                result[xIndex] = x[xIndex]
+            }
+            // Grow result if necessary
+            if (carry) {
+                val bigger = IntArray(result.size + 1)
+                for (i in 0 .. (result.size - 1)) {
+                    bigger[i + 1] = result[i]
+                }
+                bigger[0] = 1
+                return bigger
+            }
+            return result
+        }
+
+        /**
          * Subtracts the contents of the second int arrays (little) from the
          * first (big).  The first int array (big) must represent a larger number
          * than the second.  This method allocates the space necessary to hold the
@@ -463,6 +508,71 @@ class BigInteger private constructor(
                 result[bigIndex] = big[bigIndex]
             }
 
+            return result
+        }
+
+        /**
+         * Subtracts the contents of the second argument (val) from the
+         * first (big).  The first int array (big) must represent a larger number
+         * than the second.  This method allocates the space necessary to hold the
+         * answer.
+         * assumes val &gt;= 0
+         */
+        private fun subtract(big: IntArray, v: Long): IntArray {
+            val highWord = v.ushr(32)
+            var bigIndex = big.size
+            val result = IntArray(bigIndex)
+            var difference = 0L
+
+            bigIndex -= 1
+            if (0L == highWord) {
+                difference = big[bigIndex].toLong().and(LONG_MASK) - v
+                result[bigIndex] = difference.toInt()
+            } else {
+                difference = big[bigIndex].toLong().and(LONG_MASK) - v.and(LONG_MASK)
+                result[bigIndex] = difference.toInt()
+                bigIndex -= 1
+                difference = big[bigIndex].toLong().and(LONG_MASK) - highWord.and(LONG_MASK)
+                result[bigIndex] = difference.toInt()
+            }
+
+            // Subtract remainder of longer number while borrow propagates
+            var borrow = difference.shr(32) != 0L
+            while (bigIndex > 0 && borrow) {
+                bigIndex -= 1
+                result[bigIndex] = big[bigIndex] - 1
+                borrow = result[bigIndex] == -1
+            }
+
+            // Copy remainder of longer number
+            while (bigIndex > 0) {
+                bigIndex -= 1
+                result[bigIndex] = big[bigIndex]
+            }
+            return result
+        }
+
+        private fun subtract(v: Long, little: IntArray): IntArray {
+            val highWord = v.ushr(32)
+            if (0L == highWord) {
+                return intArrayOf(v.minus( little[0].toLong().and(LONG_MASK) ).toInt())
+            }
+
+            val result = IntArray(2)
+            if (little.size == 1) {
+                val difference = v.and(LONG_MASK) - little[0].toLong().and(LONG_MASK)
+                result[1] = difference.toInt()
+                // Subtract remainder of longer number while borrow propagates
+                var borrow = difference.shr(32) != 0L
+                result[0] = if (borrow) highWord.toInt() - 1 else highWord.toInt()
+                return result
+            }
+
+            // little.length == 2
+            var difference = v.and(LONG_MASK) - little[1].toLong().and(LONG_MASK)
+            result[1] = difference.toInt()
+            difference = highWord - little[0].toLong().and(LONG_MASK) + difference.shr(32)
+            result[0] = difference.toInt()
             return result
         }
 
@@ -865,6 +975,23 @@ class BigInteger private constructor(
         val resultMag = if (cmp > 0) subtract(mag, v.mag)
                            else subtract(v.mag, mag)
 
+        return BigInteger(if (cmp == signum) 1 else -1,
+                trustedStripLeadingZeroInts(resultMag))
+    }
+
+    /**
+     * Package private methods used by BigDecimal code to add a BigInteger
+     * with a long. Assumes val is not equal to INFLATED.
+     */
+    internal fun add(v: Long): BigInteger {
+        if (0L == v) return this
+        if (0 == signum) return valueOf(v)
+        if (Integer.signum(v) == signum)
+            return BigInteger(signum, add(mag, Math.abs(v)))
+        val cmp = compareMagnitude(v)
+        if (0 == cmp) return ZERO
+        val resultMag = if (cmp > 0) subtract(mag, Math.abs(v))
+                else subtract(Math.abs(v), mag)
         return BigInteger(if (cmp == signum) 1 else -1,
                 trustedStripLeadingZeroInts(resultMag))
     }
@@ -1403,6 +1530,25 @@ class BigInteger private constructor(
             if (0 != temp) return temp
         }
         return 0
+    }
+
+    /**
+     * Version of compareMagnitude that compares magnitude with long value.
+     * val can't be Long.MIN_VALUE.
+     */
+    internal fun compareMagnitude(v: Long): Int {
+        if (mag.size > 2) return 1
+        val v = if (v < 0) -v else v
+        val highWord = v.ushr(32).toInt()
+        if (0 == highWord) {
+            if (mag.size < 1) return -1
+            if (mag.size > 1) return 1
+            return comparator.compare(mag[0], v.toInt())
+        }
+        if (mag.size < 2) return -1
+        val result = comparator.compare(mag[0], highWord)
+        return if (0 != result) result
+                else comparator.compare(mag[1], v.toInt())
     }
 
     internal fun javaIncrement(v: IntArray): IntArray {

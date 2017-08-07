@@ -171,6 +171,18 @@ class Integer {
             return i and 0x3f
         }
 
+        /**
+         * Returns the signum function of the specified {@code long} value.  (The
+         * return value is -1 if the specified value is negative; 0 if the
+         * specified value is zero; and 1 if the specified value is positive.)
+         *
+         * @param i the value whose signum is to be computed
+         * @return the signum function of the specified {@code long} value.
+         */
+        fun signum(n: Long): Int {
+            return n.shl(63).or((-n).ushr(63)).toInt()
+        }
+
         fun toHexString(b: Byte): String {
             val v = b.toInt()
             val result = StringBuilder()
