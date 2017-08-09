@@ -112,7 +112,7 @@ import org.firas.lang.UIntComparator
  * @author  Alan Eliasen
  * @author  Timothy Buktu
  */
-class BigInteger private constructor(
+class BigInteger internal constructor(
         internal val signum: Int, internal var mag: IntArray): Number() {
 
     init {
@@ -577,6 +577,13 @@ class BigInteger private constructor(
         }
 
         /**
+         * Package private method to return bit length for an integer.
+         */
+        internal fun bitLengthForInt(n: Int): Int {
+            return 32 - Integer.numberOfLeadingZeros(n)
+        }
+
+        /**
          * Left shift int array a up to len by n bits. Returns the array that
          * results from the shift since space may have to be reallocated.
          */
@@ -1025,11 +1032,11 @@ class BigInteger private constructor(
     }
 
     override fun toDouble(): Double {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return toLong().toDouble()
     }
 
     override fun toFloat(): Float {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        return toInt().toFloat()
     }
 
     override fun toInt(): Int {
@@ -1344,7 +1351,7 @@ class BigInteger private constructor(
      * @implNote An implementation may offer better algorithmic
      * performance when {@code val == this}.
      *
-     * @param  val value to be multiplied by this BigInteger.
+     * @param  v value to be multiplied by this BigInteger.
      * @return {@code this * val}
      */
     fun multiply(v: BigInteger): BigInteger {
@@ -1365,12 +1372,55 @@ class BigInteger private constructor(
     }
 
     /**
+     * Package private methods used by BigDecimal code to multiply a BigInteger
+     * with a long. Assumes v is not equal to INFLATED.
+     */
+    internal fun multiply(v: Long): BigInteger {
+        if (0L == v || 0 == signum) return ZERO
+        if (v == BigDecimal.INFLATED) return multiply(BigInteger.valueOf(v))
+        val rsign = if (v > 0) signum else -signum
+        val v = if (v >= 0) v else -v
+        val dh = v ushr 32
+        val dl = v and LONG_MASK
+
+        val xlen = mag.size
+        val rmag = IntArray(xlen + if (0L == dh) 1 else 2)
+        var carry = 0L
+        var rstart = rmag.size - 1
+        var i = xlen - 1
+        while (i >= 0) {
+            val product = mag[i].toLong().and(LONG_MASK) * dl + carry
+            rmag[rstart] = product.toInt()
+            carry = product.ushr(32)
+            rstart -= 1
+            i -= 1
+        }
+        rmag[rstart] = carry.toInt()
+        if (0L != dh) {
+            carry = 0L
+            rstart = rmag.size - 2
+            i = xlen - 1
+            while (i >= 0) {
+                val product = mag[i].toLong().and(LONG_MASK) * dh +
+                        rmag[rstart].toLong().and(LONG_MASK) + carry
+                rstart -= 1
+                i -= 1
+            }
+            rmag[0] = carry.toInt()
+        }
+        if (0L == carry) {
+            return BigInteger(rsign, rmag.copyOfRange(1, rmag.size))
+        }
+        return BigInteger(rsign, rmag)
+    }
+
+    /**
      * Multiplies int arrays x and y to the specified lengths and places
      * the result into z. There will be no leading zeros in the resultant array.
      */
     private fun multiplyToLen(x: IntArray, xlen: Int,
                               y: IntArray, ylen: Int, z: IntArray?): IntArray {
-        val xstart = xlen - 1;
+        val xstart = xlen - 1
         val ystart = ylen - 1;
 
         val z: IntArray = if (null == z || z.size < (xlen + ylen))

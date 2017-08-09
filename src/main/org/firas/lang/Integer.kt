@@ -13,6 +13,8 @@ class Integer {
          */
         val SIZE = 32
 
+        val LONG_SIZE = 64
+
         /**
          * The number of bytes used to represent a {@code int} value in two's
          * complement binary form.
@@ -172,15 +174,31 @@ class Integer {
         }
 
         /**
+         * Returns the signum function of the specified {@code int} value.  (The
+         * return value is -1 if the specified value is negative; 0 if the
+         * specified value is zero; and 1 if the specified value is positive.)
+         *
+         * @param n the value whose signum is to be computed
+         * @return the signum function of the specified {@code int} value.
+         */
+        fun signum(n: Int): Int {
+            return n.shr(31) or (-n).ushr(31)
+        }
+
+        /**
          * Returns the signum function of the specified {@code long} value.  (The
          * return value is -1 if the specified value is negative; 0 if the
          * specified value is zero; and 1 if the specified value is positive.)
          *
-         * @param i the value whose signum is to be computed
+         * @param n the value whose signum is to be computed
          * @return the signum function of the specified {@code long} value.
          */
         fun signum(n: Long): Int {
             return n.shl(63).or((-n).ushr(63)).toInt()
+        }
+
+        fun unsignedToLong(n: Int): Long {
+            return n.toLong().and(0xFFFFFFFF)
         }
 
         fun toHexString(b: Byte): String {
