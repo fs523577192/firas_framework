@@ -197,7 +197,7 @@ class Integer {
             return n.shl(63).or((-n).ushr(63)).toInt()
         }
 
-        fun unsignedToLong(n: Int): Long {
+        inline fun unsignedToLong(n: Int): Long {
             return n.toLong().and(0xFFFFFFFF)
         }
 

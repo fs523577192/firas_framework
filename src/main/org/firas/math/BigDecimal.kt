@@ -693,6 +693,513 @@ class BigDecimal internal constructor(
         }
 
         /*
+         * performs divideAndRound for (dividend0*dividend1, divisor)
+         * returns null if quotient can't fit into long value;
+         */
+        private fun multiplyDivideAndRound(dividend0: Long, dividend1: Long, divisor: Long, scale: Int,
+                                           roundingMode: RoundingMode,
+                                           preferredScale: Int): BigDecimal? {
+            val qsign = Integer.signum(dividend0) * Integer.signum(dividend1) * Integer.signum(divisor)
+            val dividend0 = Math.abs(dividend0)
+            val dividend1 = Math.abs(dividend1)
+            val divisor = Math.abs(divisor)
+            // multiply dividend0 * dividend1
+            val d0_hi = dividend0.ushr(32)
+            val d0_lo = dividend0 and BigInteger.LONG_MASK
+            val d1_hi = dividend1.ushr(32)
+            val d1_lo = dividend1 and BigInteger.LONG_MASK
+            var product = d0_lo * d1_lo
+            val d0 = product and BigInteger.LONG_MASK
+            var d1 = product.ushr(32)
+            product = d0_hi * d1_lo + d1
+            d1 = product and BigInteger.LONG_MASK
+            var d2 = product.ushr(32)
+            product = d0_lo * d1_hi + d1
+            d1 = product and BigInteger.LONG_MASK
+            d2 += product.ushr(32)
+            var d3 = d2.ushr(32)
+            d2 = d2 and BigInteger.LONG_MASK
+            product = d0_hi * d1_hi + d2
+            d2 = product and BigInteger.LONG_MASK
+            d3 = product.ushr(32) + d3 and BigInteger.LONG_MASK
+            val dividendHi = make64(d3, d2)
+            val dividendLo = make64(d1, d0)
+            // divide
+            return divideAndRound128(dividendHi, dividendLo, divisor, qsign, scale, roundingMode, preferredScale)
+        }
+
+        /**
+         * Returns a `BigDecimal` rounded according to the MathContext
+         * settings;
+         * If rounding is needed a new `BigDecimal` is created and returned.
+
+         * @param v the value to be rounded
+         * *
+         * @param mc the context to use.
+         * *
+         * @return a `BigDecimal` rounded according to the MathContext
+         * *         settings.  May return `value`, if no rounding needed.
+         * *
+         * @throws ArithmeticException if the rounding mode is
+         * *         `RoundingMode.UNNECESSARY` and the
+         * *         result is inexact.
+         */
+        private fun doRound(v: BigDecimal, mc: MathContext): BigDecimal {
+            val mcp = mc.precision
+            var wasDivided = false
+            if (mcp > 0) {
+                var intVal = v.intVal
+                var compactVal = v.intCompact
+                var scale = v.scale
+                var prec = v.precision
+                val mode = mc.roundingMode
+                var drop: Int
+                if (compactVal == INFLATED) {
+                    drop = prec - mcp
+                    while (drop > 0) {
+                        scale = checkScaleNonZero(scale.toLong() - drop)
+                        intVal = divideAndRoundByTenPow(intVal!!, drop, mode)
+                        wasDivided = true
+                        compactVal = compactValFor(intVal!!)
+                        if (compactVal != INFLATED) {
+                            prec = longDigitLength(compactVal)
+                            break
+                        }
+                        prec = bigDigitLength(intVal)
+                        drop = prec - mcp
+                    }
+                }
+                if (compactVal != INFLATED) {
+                    drop = prec - mcp  // drop can't be more than 18
+                    while (drop > 0) {
+                        scale = checkScaleNonZero(scale.toLong() - drop)
+                        compactVal = divideAndRound(compactVal, LONG_TEN_POWERS_TABLE[drop], mc.roundingMode)
+                        wasDivided = true
+                        prec = longDigitLength(compactVal)
+                        drop = prec - mcp
+                        intVal = null
+                    }
+                }
+                return if (wasDivided) BigDecimal(intVal, compactVal, scale, prec) else v
+            }
+            return v
+        }
+
+        /*
+     * Returns a {@code BigDecimal} created from {@code long} value with
+     * given scale rounded according to the MathContext settings
+     */
+        private fun doRound(compactVal: Long, scale: Int, mc: MathContext): BigDecimal {
+            var compactVal = compactVal
+            var scale = scale
+            val mcp = mc.precision
+            if (mcp in 1..18) {
+                var prec = longDigitLength(compactVal)
+                var drop = prec - mcp  // drop can't be more than 18
+                while (drop > 0) {
+                    scale = checkScaleNonZero(scale.toLong() - drop)
+                    compactVal = divideAndRound(compactVal, LONG_TEN_POWERS_TABLE[drop], mc.roundingMode)
+                    prec = longDigitLength(compactVal)
+                    drop = prec - mcp
+                }
+                return valueOf(compactVal, scale, prec)
+            }
+            return valueOf(compactVal, scale)
+        }
+
+        /*
+     * Returns a {@code BigDecimal} created from {@code BigInteger} value with
+     * given scale rounded according to the MathContext settings
+     */
+        private fun doRound(intVal: BigInteger, scale: Int, mc: MathContext): BigDecimal {
+            var intVal = intVal
+            var scale = scale
+            val mcp = mc.precision
+            var prec = 0
+            if (mcp > 0) {
+                var compactVal = compactValFor(intVal)
+                val mode = mc.roundingMode
+                var drop: Int
+                if (compactVal == INFLATED) {
+                    prec = bigDigitLength(intVal)
+                    drop = prec - mcp
+                    while (drop > 0) {
+                        scale = checkScaleNonZero(scale.toLong() - drop)
+                        intVal = divideAndRoundByTenPow(intVal, drop, mode)
+                        compactVal = compactValFor(intVal)
+                        if (compactVal != INFLATED) {
+                            break
+                        }
+                        prec = bigDigitLength(intVal)
+                        drop = prec - mcp
+                    }
+                }
+                if (compactVal != INFLATED) {
+                    prec = longDigitLength(compactVal)
+                    drop = prec - mcp     // drop can't be more than 18
+                    while (drop > 0) {
+                        scale = checkScaleNonZero(scale.toLong() - drop)
+                        compactVal = divideAndRound(compactVal, LONG_TEN_POWERS_TABLE[drop], mc.roundingMode)
+                        prec = longDigitLength(compactVal)
+                        drop = prec - mcp
+                    }
+                    return valueOf(compactVal, scale, prec)
+                }
+            }
+            return BigDecimal(intVal, INFLATED, scale, prec)
+        }
+
+        /*
+         * calculate divideAndRound for ldividend*10^raise / divisor
+         * when abs(dividend)==abs(divisor);
+         */
+        private fun roundedTenPower(qsign: Int, raise: Int, scale: Int, preferredScale: Int): BigDecimal {
+            if (scale > preferredScale) {
+                val diff = scale - preferredScale
+                if (diff < raise) {
+                    return scaledTenPow(raise - diff, qsign, preferredScale)
+                }
+                return valueOf(qsign.toLong(), scale - raise)
+            }
+            return scaledTenPow(raise, qsign, scale)
+        }
+
+        internal fun scaledTenPow(n: Int, sign: Int, scale: Int): BigDecimal {
+            if (n < LONG_TEN_POWERS_TABLE.size)
+                return valueOf(sign * LONG_TEN_POWERS_TABLE[n], scale)
+            var unscaledVal = bigTenToThe(n)
+            if (sign == -1) {
+                unscaledVal = unscaledVal.negate()
+            }
+            return BigDecimal(unscaledVal, INFLATED, scale, n + 1)
+        }
+
+        private fun divide(dividend: Long, dividendScale: Int, divisor: Long, divisorScale: Int,
+                           scale: Int, roundingMode: RoundingMode): BigDecimal {
+            if (checkScale(dividend, scale.toLong() + divisorScale) > dividendScale) {
+                val newScale = scale + divisorScale
+                val raise = newScale - dividendScale
+                if (raise < LONG_TEN_POWERS_TABLE.size) {
+                    var xs = longMultiplyPowerTen(dividend, raise)
+                    if (xs != INFLATED) {
+                        return divideAndRound(xs, divisor, scale, roundingMode, scale)
+                    }
+                    val q = multiplyDivideAndRound(LONG_TEN_POWERS_TABLE[raise],
+                            dividend, divisor, scale, roundingMode, scale)
+                    if (q != null) {
+                        return q
+                    }
+                }
+                val scaledDividend = bigMultiplyPowerTen(dividend, raise)
+                return divideAndRound(scaledDividend, divisor, scale, roundingMode, scale)
+            }
+            val newScale = checkScale(divisor, dividendScale.toLong() - scale)
+            val raise = newScale - divisorScale
+            if (raise < LONG_TEN_POWERS_TABLE.size) {
+                var ys = longMultiplyPowerTen(divisor, raise)
+                if (ys != INFLATED) {
+                    return divideAndRound(dividend, ys, scale, roundingMode, scale)
+                }
+            }
+            val scaledDivisor = bigMultiplyPowerTen(divisor, raise)
+            return divideAndRound(BigInteger.valueOf(dividend), scaledDivisor, scale, roundingMode, scale)
+        }
+
+        private fun divide(dividend: BigInteger, dividendScale: Int, divisor: Long, divisorScale: Int,
+                           scale: Int, roundingMode: RoundingMode): BigDecimal {
+            if (checkScale(dividend, scale.toLong() + divisorScale) > dividendScale) {
+                val newScale = scale + divisorScale
+                val raise = newScale - dividendScale
+                val scaledDividend = bigMultiplyPowerTen(dividend, raise)
+                return divideAndRound(scaledDividend, divisor, scale, roundingMode, scale)
+            }
+            val newScale = checkScale(divisor, dividendScale.toLong() - scale)
+            val raise = newScale - divisorScale
+            if (raise < LONG_TEN_POWERS_TABLE.size) {
+                var ys = longMultiplyPowerTen(divisor, raise)
+                if (ys != INFLATED) {
+                    return divideAndRound(dividend, ys, scale, roundingMode, scale)
+                }
+            }
+            val scaledDivisor = bigMultiplyPowerTen(divisor, raise)
+            return divideAndRound(dividend, scaledDivisor, scale, roundingMode, scale)
+        }
+
+        private fun divide(dividend: Long, dividendScale: Int, divisor: BigInteger, divisorScale: Int,
+                           scale: Int, roundingMode: RoundingMode): BigDecimal {
+            if (checkScale(dividend, scale.toLong() + divisorScale) > dividendScale) {
+                val newScale = scale + divisorScale
+                val raise = newScale - dividendScale
+                val scaledDividend = bigMultiplyPowerTen(dividend, raise)
+                return divideAndRound(scaledDividend, divisor, scale, roundingMode, scale)
+            }
+            val newScale = checkScale(divisor, dividendScale.toLong() - scale)
+            val raise = newScale - divisorScale
+            val scaledDivisor = bigMultiplyPowerTen(divisor, raise)
+            return divideAndRound(BigInteger.valueOf(dividend), scaledDivisor, scale, roundingMode, scale)
+        }
+
+        private fun divide(dividend: BigInteger, dividendScale: Int, divisor: BigInteger, divisorScale: Int,
+                           scale: Int, roundingMode: RoundingMode): BigDecimal {
+            if (checkScale(dividend, scale.toLong() + divisorScale) > dividendScale) {
+                val newScale = scale + divisorScale
+                val raise = newScale - dividendScale
+                val scaledDividend = bigMultiplyPowerTen(dividend, raise)
+                return divideAndRound(scaledDividend, divisor, scale, roundingMode, scale)
+            }
+            val newScale = checkScale(divisor, dividendScale.toLong() - scale)
+            val raise = newScale - divisorScale
+            val scaledDivisor = bigMultiplyPowerTen(divisor, raise)
+            return divideAndRound(dividend, scaledDivisor, scale, roundingMode, scale)
+        }
+
+        /**
+         * Returns a `BigDecimal` whose value is `(xs /
+         * ys)`, with rounding according to the context settings.
+
+         * Fast path - used only when (xscale <= yscale && yscale < 18
+         * && mc.presision<18) {
+         */
+        private fun divideSmallFastPath(xs: Long, xscale: Int,
+                                        ys: Long, yscale: Int,
+                                        preferredScale: Long, mc: MathContext): BigDecimal {
+            var yscale = yscale
+            val mcp = mc.precision
+            val roundingMode = mc.roundingMode
+
+            if (xscale > yscale || yscale >= 18 || mcp >= 18) throw IllegalArgumentException(null)
+            val xraise = yscale - xscale // xraise >=0
+            val scaledX = if (xraise == 0)
+                xs
+            else
+                longMultiplyPowerTen(xs, xraise) // can't overflow here!
+            var quotient: BigDecimal?
+
+            val cmp = longCompareMagnitude(scaledX, ys)
+            if (cmp > 0) { // satisfy constraint (b)
+                yscale -= 1 // [that is, divisor *= 10]
+                val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+                if (checkScaleNonZero(mcp.toLong() + yscale - xscale) > 0) {
+                    // assert newScale >= xscale
+                    val raise = checkScaleNonZero(mcp.toLong() + yscale - xscale)
+                    val scaledXs = longMultiplyPowerTen(xs, raise)
+                    if (scaledXs == INFLATED) {
+                        quotient = null
+                        if (mcp - 1 >= 0 && mcp - 1 < LONG_TEN_POWERS_TABLE.size) {
+                            quotient = multiplyDivideAndRound(LONG_TEN_POWERS_TABLE[mcp - 1], scaledX,
+                                    ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                        }
+                        if (quotient == null) {
+                            val rb = bigMultiplyPowerTen(scaledX, mcp - 1)
+                            quotient = divideAndRound(rb, ys,
+                                    scl, roundingMode, checkScaleNonZero(preferredScale))
+                        }
+                    } else {
+                        quotient = divideAndRound(scaledXs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    }
+                } else {
+                    val newScale = checkScaleNonZero(xscale.toLong() - mcp)
+                    // assert newScale >= yscale
+                    if (newScale == yscale) { // easy case
+                        quotient = divideAndRound(xs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    } else {
+                        val raise = checkScaleNonZero(newScale.toLong() - yscale)
+                        val scaledYs = longMultiplyPowerTen(ys, raise)
+                        if (scaledYs == INFLATED) {
+                            val rb = bigMultiplyPowerTen(ys, raise)
+                            quotient = divideAndRound(BigInteger.valueOf(xs),
+                                    rb, scl, roundingMode, checkScaleNonZero(preferredScale))
+                        } else {
+                            quotient = divideAndRound(xs, scaledYs, scl, roundingMode, checkScaleNonZero(preferredScale))
+                        }
+                    }
+                }
+            } else {
+                // abs(scaledX) <= abs(ys)
+                // result is "scaledX * 10^msp / ys"
+                val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+                if (cmp == 0) {
+                    // abs(scaleX)== abs(ys) => result will be scaled 10^mcp + correct sign
+                    quotient = roundedTenPower(if (scaledX < 0 == ys < 0) 1 else -1, mcp, scl, checkScaleNonZero(preferredScale))
+                } else {
+                    // abs(scaledX) < abs(ys)
+                    val scaledXs = longMultiplyPowerTen(scaledX, mcp)
+                    if (scaledXs == INFLATED) {
+                        quotient = null
+                        if (mcp < LONG_TEN_POWERS_TABLE.size) {
+                            quotient = multiplyDivideAndRound(LONG_TEN_POWERS_TABLE[mcp], scaledX,
+                                    ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                        }
+                        if (quotient == null) {
+                            val rb = bigMultiplyPowerTen(scaledX, mcp)
+                            quotient = divideAndRound(rb, ys,
+                                    scl, roundingMode, checkScaleNonZero(preferredScale))
+                        }
+                    } else {
+                        quotient = divideAndRound(scaledXs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    }
+                }
+            }
+            // doRound, here, only affects 1000000000 case.
+            return doRound(quotient, mc)
+        }
+
+        /**
+         * Returns a `BigDecimal` whose value is `(xs /
+         * ys)`, with rounding according to the context settings.
+         */
+        private fun divide(xs: Long, xscale: Int, ys: Long, yscale: Int, preferredScale: Long, mc: MathContext): BigDecimal {
+            var yscale = yscale
+            val mcp = mc.precision
+            if (xscale <= yscale && yscale < 18 && mcp < 18) {
+                return divideSmallFastPath(xs, xscale, ys, yscale, preferredScale, mc)
+            }
+            if (compareMagnitudeNormalized(xs, xscale, ys, yscale) > 0) {// satisfy constraint (b)
+                yscale -= 1 // [that is, divisor *= 10]
+            }
+            val roundingMode = mc.roundingMode
+            // In order to find out whether the divide generates the exact result,
+            // we avoid calling the above divide method. 'quotient' holds the
+            // return BigDecimal object whose scale will be set to 'scl'.
+            val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+            val quotient: BigDecimal
+            if (checkScaleNonZero(mcp.toLong() + yscale - xscale) > 0) {
+                val raise = checkScaleNonZero(mcp.toLong() + yscale - xscale)
+                val scaledXs = longMultiplyPowerTen(xs, raise)
+                if (scaledXs == INFLATED) {
+                    val rb = bigMultiplyPowerTen(xs, raise)
+                    quotient = divideAndRound(rb, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                } else {
+                    quotient = divideAndRound(scaledXs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                }
+            } else {
+                val newScale = checkScaleNonZero(xscale.toLong() - mcp)
+                // assert newScale >= yscale
+                if (newScale == yscale) { // easy case
+                    quotient = divideAndRound(xs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                } else {
+                    val raise = checkScaleNonZero(newScale.toLong() - yscale)
+                    val scaledYs = longMultiplyPowerTen(ys, raise)
+                    if (scaledYs == INFLATED) {
+                        val rb = bigMultiplyPowerTen(ys, raise)
+                        quotient = divideAndRound(BigInteger.valueOf(xs),
+                                rb, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    } else {
+                        quotient = divideAndRound(xs, scaledYs, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    }
+                }
+            }
+            // doRound, here, only affects 1000000000 case.
+            return doRound(quotient, mc)
+        }
+
+        /**
+         * Returns a `BigDecimal` whose value is `(xs /
+         * ys)`, with rounding according to the context settings.
+         */
+        private fun divide(xs: BigInteger, xscale: Int, ys: Long, yscale: Int, preferredScale: Long, mc: MathContext): BigDecimal {
+            var yscale = yscale
+            // Normalize dividend & divisor so that both fall into [0.1, 0.999...]
+            if (-compareMagnitudeNormalized(ys, yscale, xs, xscale) > 0) {// satisfy constraint (b)
+                yscale -= 1 // [that is, divisor *= 10]
+            }
+            val mcp = mc.precision
+            val roundingMode = mc.roundingMode
+
+            // In order to find out whether the divide generates the exact result,
+            // we avoid calling the above divide method. 'quotient' holds the
+            // return BigDecimal object whose scale will be set to 'scl'.
+            val quotient: BigDecimal
+            val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+            if (checkScaleNonZero(mcp.toLong() + yscale - xscale) > 0) {
+                val raise = checkScaleNonZero(mcp.toLong() + yscale - xscale)
+                val rb = bigMultiplyPowerTen(xs, raise)
+                quotient = divideAndRound(rb, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+            } else {
+                val newScale = checkScaleNonZero(xscale.toLong() - mcp)
+                // assert newScale >= yscale
+                if (newScale == yscale) { // easy case
+                    quotient = divideAndRound(xs, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+                } else {
+                    val raise = checkScaleNonZero(newScale.toLong() - yscale)
+                    val scaledYs = longMultiplyPowerTen(ys, raise)
+                    if (scaledYs == INFLATED) {
+                        val rb = bigMultiplyPowerTen(ys, raise)
+                        quotient = divideAndRound(xs, rb, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    } else {
+                        quotient = divideAndRound(xs, scaledYs, scl, roundingMode, checkScaleNonZero(preferredScale))
+                    }
+                }
+            }
+            // doRound, here, only affects 1000000000 case.
+            return doRound(quotient, mc)
+        }
+
+        /**
+         * Returns a `BigDecimal` whose value is `(xs /
+         * ys)`, with rounding according to the context settings.
+         */
+        private fun divide(xs: Long, xscale: Int, ys: BigInteger, yscale: Int, preferredScale: Long, mc: MathContext): BigDecimal {
+            var yscale = yscale
+            // Normalize dividend & divisor so that both fall into [0.1, 0.999...]
+            if (compareMagnitudeNormalized(xs, xscale, ys, yscale) > 0) {// satisfy constraint (b)
+                yscale -= 1 // [that is, divisor *= 10]
+            }
+            val mcp = mc.precision
+            val roundingMode = mc.roundingMode
+
+            // In order to find out whether the divide generates the exact result,
+            // we avoid calling the above divide method. 'quotient' holds the
+            // return BigDecimal object whose scale will be set to 'scl'.
+            val quotient: BigDecimal
+            val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+            if (checkScaleNonZero(mcp.toLong() + yscale - xscale) > 0) {
+                val raise = checkScaleNonZero(mcp.toLong() + yscale - xscale)
+                val rb = bigMultiplyPowerTen(xs, raise)
+                quotient = divideAndRound(rb, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+            } else {
+                val newScale = checkScaleNonZero(xscale.toLong() - mcp)
+                val raise = checkScaleNonZero(newScale.toLong() - yscale)
+                val rb = bigMultiplyPowerTen(ys, raise)
+                quotient = divideAndRound(BigInteger.valueOf(xs), rb, scl, roundingMode, checkScaleNonZero(preferredScale))
+            }
+            // doRound, here, only affects 1000000000 case.
+            return doRound(quotient, mc)
+        }
+
+        /**
+         * Returns a `BigDecimal` whose value is `(xs /
+         * ys)`, with rounding according to the context settings.
+         */
+        private fun divide(xs: BigInteger, xscale: Int, ys: BigInteger, yscale: Int, preferredScale: Long, mc: MathContext): BigDecimal {
+            var yscale = yscale
+            // Normalize dividend & divisor so that both fall into [0.1, 0.999...]
+            if (compareMagnitudeNormalized(xs, xscale, ys, yscale) > 0) {// satisfy constraint (b)
+                yscale -= 1 // [that is, divisor *= 10]
+            }
+            val mcp = mc.precision
+            val roundingMode = mc.roundingMode
+
+            // In order to find out whether the divide generates the exact result,
+            // we avoid calling the above divide method. 'quotient' holds the
+            // return BigDecimal object whose scale will be set to 'scl'.
+            val quotient: BigDecimal
+            val scl = checkScaleNonZero(preferredScale + yscale - xscale + mcp)
+            if (checkScaleNonZero(mcp.toLong() + yscale - xscale) > 0) {
+                val raise = checkScaleNonZero(mcp.toLong() + yscale - xscale)
+                val rb = bigMultiplyPowerTen(xs, raise)
+                quotient = divideAndRound(rb, ys, scl, roundingMode, checkScaleNonZero(preferredScale))
+            } else {
+                val newScale = checkScaleNonZero(xscale.toLong() - mcp)
+                val raise = checkScaleNonZero(newScale.toLong() - yscale)
+                val rb = bigMultiplyPowerTen(ys, raise)
+                quotient = divideAndRound(xs, rb, scl, roundingMode, checkScaleNonZero(preferredScale))
+            }
+            // doRound, here, only affects 1000000000 case.
+            return doRound(quotient, mc)
+        }
+
+        /*
          * Divides {@code BigInteger} value by ten power.
          */
         private fun divideAndRoundByTenPow(intVal: BigInteger, tenPow: Int, roundingMode: RoundingMode): BigInteger {
@@ -711,7 +1218,8 @@ class BigDecimal internal constructor(
          * the last parameter, i.e. preferredScale is NOT equal to scale, the
          * trailing zeros of the result is stripped to match the preferredScale.
          */
-        private fun divideAndRound(ldividend: Long, ldivisor: Long, scale: Int, roundingMode: RoundingMode, preferredScale: Int): BigDecimal {
+        private fun divideAndRound(ldividend: Long, ldivisor: Long, scale: Int,
+                                   roundingMode: RoundingMode, preferredScale: Int): BigDecimal {
             val q = ldividend / ldivisor
             if (roundingMode == RoundingMode.DOWN && scale == preferredScale) return valueOf(q, scale)
             val r = ldividend % ldivisor
@@ -721,7 +1229,7 @@ class BigDecimal internal constructor(
                 return valueOf(if (increment) q + qsign else q, scale)
             }
             if (preferredScale != scale) {
-                return createAndStripZerosToMatchScale(q, scale, preferredScale)
+                return createAndStripZerosToMatchScale(q, scale, preferredScale.toLong())
             }
             return valueOf(q, scale)
         }
@@ -740,6 +1248,116 @@ class BigDecimal internal constructor(
                 return if (increment) q + qsign else q
             }
             return q
+        }
+
+        /**
+         * Divides `BigInteger` value by `long` value and
+         * do rounding based on the passed in roundingMode.
+         */
+        private fun divideAndRound(bdividend: BigInteger, ldivisor: Long, roundingMode: RoundingMode): BigInteger {
+            // Descend into mutables for faster remainder checks
+            val mdividend = MutableBigInteger(bdividend.mag)
+            val mq = MutableBigInteger() // store quotient
+            val r = mdividend.divide(ldivisor, mq)
+            val isRemainderZero = (0L == r)
+            val qsign = if (ldivisor < 0) -bdividend.signum else bdividend.signum
+            if (!isRemainderZero) {
+                if (needIncrement(ldivisor, roundingMode, qsign, mq, r)) {
+                    mq.add(MutableBigInteger.ONE)
+                }
+            }
+            return mq.toBigInteger(qsign)
+        }
+
+        /**
+         * Internally used for division operation for division `BigInteger`
+         * by `long`.
+         * The returned `BigDecimal` object is the quotient whose scale is set
+         * to the passed in scale. If the remainder is not zero, it will be rounded
+         * based on the passed in roundingMode. Also, if the remainder is zero and
+         * the last parameter, i.e. preferredScale is NOT equal to scale, the
+         * trailing zeros of the result is stripped to match the preferredScale.
+         */
+        private fun divideAndRound(bdividend: BigInteger, ldivisor: Long, scale: Int,
+                                   roundingMode: RoundingMode, preferredScale: Int): BigDecimal {
+            // Descend into mutables for faster remainder checks
+            val mdividend = MutableBigInteger(bdividend.mag)
+            val mq = MutableBigInteger() // store quotient
+            val r = mdividend.divide(ldivisor, mq)
+            val isRemainderZero = (0L == r)
+            val qsign = if (ldivisor < 0) -bdividend.signum else bdividend.signum
+            if (!isRemainderZero) {
+                if (needIncrement(ldivisor, roundingMode, qsign, mq, r)) {
+                    mq.add(MutableBigInteger.ONE)
+                }
+                return mq.toBigDecimal(qsign, scale)
+            }
+            if (preferredScale != scale) {
+                val compactVal = mq.toCompactValue(qsign)
+                if (compactVal != INFLATED) {
+                    return createAndStripZerosToMatchScale(compactVal, scale, preferredScale.toLong())
+                }
+                val intVal = mq.toBigInteger(qsign)
+                return createAndStripZerosToMatchScale(intVal, scale, preferredScale.toLong())
+            }
+            return mq.toBigDecimal(qsign, scale)
+        }
+
+        /**
+         * Divides `BigInteger` value by `BigInteger` value and
+         * do rounding based on the passed in roundingMode.
+         */
+        private fun divideAndRound(bdividend: BigInteger, bdivisor: BigInteger, roundingMode: RoundingMode): BigInteger {
+            // Descend into mutables for faster remainder checks
+            val mdividend = MutableBigInteger(bdividend.mag)
+            val mq = MutableBigInteger()
+            val mdivisor = MutableBigInteger(bdivisor.mag)
+            val mr = mdividend.divide(mdivisor, mq)
+            val isRemainderZero = mr.isZero
+            val qsign = if (bdividend.signum !== bdivisor.signum) -1 else 1
+            if (!isRemainderZero) {
+                if (needIncrement(mdivisor, roundingMode, qsign, mq, mr)) {
+                    mq.add(MutableBigInteger.ONE)
+                }
+            }
+            return mq.toBigInteger(qsign)
+        }
+
+        /**
+         * Internally used for division operation for division `BigInteger`
+         * by `BigInteger`.
+         * The returned `BigDecimal` object is the quotient whose scale is set
+         * to the passed in scale. If the remainder is not zero, it will be rounded
+         * based on the passed in roundingMode. Also, if the remainder is zero and
+         * the last parameter, i.e. preferredScale is NOT equal to scale, the
+         * trailing zeros of the result is stripped to match the preferredScale.
+         */
+        private fun divideAndRound(bdividend: BigInteger, bdivisor: BigInteger, scale: Int,
+                                   roundingMode: RoundingMode, preferredScale: Int): BigDecimal {
+            // Descend into mutables for faster remainder checks
+            val mdividend = MutableBigInteger(bdividend.mag)
+            val mq = MutableBigInteger()
+            val mdivisor = MutableBigInteger(bdivisor.mag)
+            val mr = mdividend.divide(mdivisor, mq)
+            val isRemainderZero = mr.isZero
+            val qsign = if (bdividend.signum != bdivisor.signum) -1 else 1
+            if (!isRemainderZero) {
+                if (needIncrement(mdivisor, roundingMode, qsign, mq, mr)) {
+                    mq.add(MutableBigInteger.ONE)
+                }
+                return mq.toBigDecimal(qsign, scale)
+            } else {
+                if (preferredScale != scale) {
+                    val compactVal = mq.toCompactValue(qsign)
+                    if (compactVal != INFLATED) {
+                        return createAndStripZerosToMatchScale(compactVal, scale, preferredScale.toLong())
+                    }
+                    val intVal = mq.toBigInteger(qsign)
+                    return createAndStripZerosToMatchScale(intVal, scale, preferredScale.toLong())
+                } else {
+                    return mq.toBigDecimal(qsign, scale)
+                }
+            }
         }
 
         /**
@@ -799,9 +1417,8 @@ class BigDecimal internal constructor(
             return commonNeedIncrement(roundingMode, qsign, cmpFracHalf, q.and(1L) != 0L)
         }
 
-        /**
         private fun needIncrement(ldivisor: Long, roundingMode: RoundingMode,
-                                  qsign: Int, mq: BigInteger, r: Long): Boolean {
+                                  qsign: Int, mq: MutableBigInteger, r: Long): Boolean {
             if (r == 0L) throw IllegalArgumentException("r == 0")
 
             var cmpFracHalf: Int
@@ -811,9 +1428,18 @@ class BigDecimal internal constructor(
                 cmpFracHalf = longCompareMagnitude(2 * r, ldivisor)
             }
 
-            return commonNeedIncrement(roundingMode, qsign, cmpFracHalf, mq.isOdd())
+            return commonNeedIncrement(roundingMode, qsign, cmpFracHalf, mq.isOdd)
         }
-        */
+
+        /**
+         * Tests if quotient has to be incremented according the roundingMode
+         */
+        private fun needIncrement(mdivisor: MutableBigInteger, roundingMode: RoundingMode,
+                                  qsign: Int, mq: MutableBigInteger, mr: MutableBigInteger): Boolean {
+            if (mr.isZero) throw ArithmeticException("Divide by 0")
+            val cmpFracHalf = mr.compareHalf(mdivisor)
+            return commonNeedIncrement(roundingMode, qsign, cmpFracHalf, mq.isOdd)
+        }
 
         /**
          * Remove insignificant trailing zeros from this
@@ -875,6 +1501,11 @@ class BigDecimal internal constructor(
 
         val DIV_NUM_BASE = 1L shl 32 // Number base (32 bits).
 
+        private fun saturateLong(s: Long): Int {
+            val i = s.toInt()
+            return if (s == i.toLong()) i else if (s < 0) Int.MIN_VALUE else Int.MAX_VALUE
+        }
+
         /*
          * divideAndRound 128-bit value by long divisor.
          * returns null if quotient can't fit into long value;
@@ -921,7 +1552,7 @@ class BigDecimal internal constructor(
                     return mq.toBigDecimal(sign, scale)
                 }
                 val r = mulsub(u1, u0, v1, v0, q0).ushr(shift)
-                if (r != 0) {
+                if (r != 0L) {
                     if (needIncrement(divisor.ushr(shift), roundingMode, sign, mq, r)) {
                         mq.add(MutableBigInteger.ONE)
                     }
@@ -929,7 +1560,7 @@ class BigDecimal internal constructor(
                 }
                 if (preferredScale != scale) {
                     val intVal =  mq.toBigInteger(sign)
-                    return createAndStripZerosToMatchScale(intVal, scale, preferredScale)
+                    return createAndStripZerosToMatchScale(intVal, scale, preferredScale.toLong())
                 }
                 return mq.toBigDecimal(sign, scale)
             }
@@ -938,7 +1569,7 @@ class BigDecimal internal constructor(
                 return valueOf(q, scale)
             }
             val r = mulsub(u1, u0, v1, v0, q0).ushr(shift)
-            if (r != 0) {
+            if (r != 0L) {
                 val increment = needIncrement(divisor.ushr(shift), roundingMode, sign, q, r)
                 return valueOf(if (increment) q + sign else q, scale)
             }
@@ -1049,33 +1680,56 @@ class BigDecimal internal constructor(
             return BigDecimal(x.multiply(y), INFLATED, scale, 0)
         }
 
+        private inline fun shiftLeft16(n: Long): Long {
+            return n.shl(16)
+        }
         private var LONGLONG_TEN_POWERS_TABLE = arrayOf(
-                longArrayOf(                    0L, 0x8AC7_2304_89E8_0000L), //10^19
-                longArrayOf(                  0x5L, 0x6BC7_5E2D_6310_0000L), //10^20
-                longArrayOf(                 0x36L, 0x35C9_ADC5_DEA0_0000L), //10^21
-                longArrayOf(                0x21EL, 0x19E0_C9BA_B240_0000L), //10^22
-                longArrayOf(               0x152DL, 0x02C7_E14A_F680_0000L), //10^23
-                longArrayOf(               0xD3C2L, 0x1BCE_CCED_A100_0000L), //10^24
-                longArrayOf(             0x8_4595L, 0x1614_0148_4A00_0000L), //10^25
-                longArrayOf(            0x52_B7D2L, 0xDCC8_0CD2_E400_0000L), //10^26
-                longArrayOf(           0x33B_2E3CL, 0x9FD0_803C_E800_0000L), //10^27
-                longArrayOf(          0x204F_CE5EL, 0x3E25_0261_1000_0000L), //10^28
-                longArrayOf(        0x1_431E_0FAEL, 0x6D72_17CA_A000_0000L), //10^29
-                longArrayOf(        0xC9_F2C9_CD0L, 0x4674_EDEA_4000_0000L), //10^30
-                longArrayOf(       0x7E_37BE_2022L, 0xC091_4B26_8000_0000L), //10^31
-                longArrayOf(      0x4EE_2D6D_415BL, 0x85AC_EF81_0000_0000L), //10^32
-                longArrayOf(     0x314D_C644_8D93L, 0x38C1_5B0A_0000_0000L), //10^33
-                longArrayOf(   0x1_ED09_BEAD_87C0L, 0x378D_8E64_0000_0000L), //10^34
-                longArrayOf(  0x13_4261_72C7_4D82L, 0x2B87_8FE8_0000_0000L), //10^35
-                longArrayOf(  0xC0_97CE_7BC9_0715L, 0xB34B_9F10_0000_0000L), //10^36
-                longArrayOf( 0x785_EE10_D5DA_46D9L, 0x00F4_36A0_0000_0000L), //10^37
-                longArrayOf(0x4B3B_4CA8_5A86_C47AL, 0x098A_2240_0000_0000L))//10^38
+                longArrayOf(                    0L, shiftLeft16(0x8AC7_2304_89E8L)), //10^19
+                longArrayOf(                  0x5L, shiftLeft16(0x6BC7_5E2D_6310L)), //10^20
+                longArrayOf(                 0x36L, shiftLeft16(0x35C9_ADC5_DEA0L)), //10^21
+                longArrayOf(                0x21EL, shiftLeft16(0x19E0_C9BA_B240L)), //10^22
+                longArrayOf(               0x152DL, shiftLeft16(0x02C7_E14A_F680L)), //10^23
+                longArrayOf(               0xD3C2L, shiftLeft16(0x1BCE_CCED_A100L)), //10^24
+                longArrayOf(             0x8_4595L, shiftLeft16(0x1614_0148_4A00L)), //10^25
+                longArrayOf(            0x52_B7D2L, shiftLeft16(0xDCC8_0CD2_E400L)), //10^26
+                longArrayOf(           0x33B_2E3CL, shiftLeft16(0x9FD0_803C_E800L)), //10^27
+                longArrayOf(          0x204F_CE5EL, shiftLeft16(0x3E25_0261_1000L)), //10^28
+                longArrayOf(        0x1_431E_0FAEL, shiftLeft16(0x6D72_17CA_A000L)), //10^29
+                longArrayOf(        0xC9_F2C9_CD0L, shiftLeft16(0x4674_EDEA_4000L)), //10^30
+                longArrayOf(       0x7E_37BE_2022L, shiftLeft16(0xC091_4B26_8000L)), //10^31
+                longArrayOf(      0x4EE_2D6D_415BL, shiftLeft16(0x85AC_EF81_0000L)), //10^32
+                longArrayOf(     0x314D_C644_8D93L, shiftLeft16(0x38C1_5B0A_0000L)), //10^33
+                longArrayOf(   0x1_ED09_BEAD_87C0L, shiftLeft16(0x378D_8E64_0000L)), //10^34
+                longArrayOf(  0x13_4261_72C7_4D82L, shiftLeft16(0x2B87_8FE8_0000L)), //10^35
+                longArrayOf(  0xC0_97CE_7BC9_0715L, shiftLeft16(0xB34B_9F10_0000L)), //10^36
+                longArrayOf( 0x785_EE10_D5DA_46D9L, shiftLeft16(0x00F4_36A0_0000L)), //10^37
+                longArrayOf(0x4B3B_4CA8_5A86_C47AL, shiftLeft16(0x098A_2240_0000L)))//10^38
         private fun precision(hi: Long, lo: Long): Int {
             if (0L == hi) {
                 if (lo >= 0) return longDigitLength(lo)
-                return if (unsignedLongCompareEq(lo, )) 20 else 19
+                return if (unsignedLongCompareEq(lo, LONGLONG_TEN_POWERS_TABLE[0][1])) 20 else 19
+                // 0x8AC7230489E80000L  = unsigned 2^19
             }
+            val r = ((128 - Integer.numberOfLeadingZeros(hi) + 1) * 1233).ushr(12)
+            val idx = r - 19
+            return if (idx >= LONGLONG_TEN_POWERS_TABLE.size || longLongCompareMagnitude(hi, lo,
+                    LONGLONG_TEN_POWERS_TABLE[idx][0], LONGLONG_TEN_POWERS_TABLE[idx][1]))
+                        r
+                    else
+                        r + 1
         }
+
+        /*
+         * returns true if 128 bit number <hi0,lo0> is less then <hi1,lo1>
+         * hi0 & hi1 should be non-negative
+         */
+        private fun longLongCompareMagnitude(hi0: Long, lo0: Long, hi1: Long, lo1: Long): Boolean {
+            if (hi0 != hi1) {
+                return hi0 < hi1
+            }
+            return lo0 + Long.MIN_VALUE < lo1 + Long.MIN_VALUE
+        }
+
     }
 
     /**
@@ -1166,6 +1820,32 @@ class BigDecimal internal constructor(
     }
 
     /**
+     * Returns a `BigDecimal` whose value is <tt>(this
+     * multiplicand)</tt>, and whose scale is `(this.scale() +
+     * multiplicand.scale())`.
+
+     * @param  multiplicand value to be multiplied by this `BigDecimal`.
+     * *
+     * @return `this * multiplicand`
+     */
+    fun multiply(multiplicand: BigDecimal): BigDecimal {
+        val productScale = checkScale(scale.toLong() + multiplicand.scale)
+        if (this.intCompact != INFLATED) {
+            if (multiplicand.intCompact != INFLATED) {
+                return multiply(this.intCompact, multiplicand.intCompact, productScale)
+            } else {
+                return multiply(this.intCompact, multiplicand.intVal!!, productScale)
+            }
+        } else {
+            if (multiplicand.intCompact != INFLATED) {
+                return multiply(multiplicand.intCompact, this.intVal!!, productScale)
+            } else {
+                return multiply(this.intVal!!, multiplicand.intVal!!, productScale)
+            }
+        }
+    }
+
+    /**
      * Returns a {@code BigDecimal} whose value is
      * <tt>(this<sup>n</sup>)</tt>, The power is computed exactly, to
      * unlimited precision.
@@ -1187,6 +1867,64 @@ class BigDecimal internal constructor(
         // Don't attempt to support "supernormal" numbers.
         val newScale = checkScale(scale.toLong() * n);
         return BigDecimal(this.inflated().pow(n), newScale)
+    }
+
+    /**
+     * Returns a `BigDecimal` whose value is `(this /
+     * divisor)`, and whose preferred scale is `(this.scale() -
+     * divisor.scale())`; if the exact quotient cannot be
+     * represented (because it has a non-terminating decimal
+     * expansion) an `ArithmeticException` is thrown.
+
+     * @param  divisor value by which this `BigDecimal` is to be divided.
+     * @throws ArithmeticException if the exact quotient does not have a
+     * *         terminating decimal expansion
+     * @return `this / divisor`
+     * @author Joseph D. Darcy
+     */
+    fun divide(divisor: BigDecimal): BigDecimal {
+        /*
+         * Handle zero cases first.
+         */
+        if (divisor.signum() == 0) {   // x/0
+            if (this.signum() == 0)    // 0/0
+                throw ArithmeticException("Division undefined")  // NaN
+            throw ArithmeticException("Division by zero")
+        }
+
+        // Calculate preferred scale
+        val preferredScale = saturateLong(this.scale.toLong() - divisor.scale)
+
+        if (this.signum() == 0) // 0/y
+            return zeroValueOf(preferredScale)
+        /*
+         * If the quotient this/divisor has a terminating decimal
+         * expansion, the expansion can have no more than
+         * (a.precision() + ceil(10*b.precision)/3) digits.
+         * Therefore, create a MathContext object with this
+         * precision and do a divide with the UNNECESSARY rounding
+         * mode.
+         */
+        val mc = MathContext(Math.min(this.precision + Math.ceil(10.0 * divisor.precision / 3.0).toLong(),
+                                    Int.MAX_VALUE.toLong()).toInt(),
+                            RoundingMode.UNNECESSARY)
+        val quotient: BigDecimal
+        try {
+            quotient = this.divide(divisor, mc)
+        } catch (e: ArithmeticException) {
+            throw ArithmeticException("Non-terminating decimal expansion; " + "no exact representable decimal result.")
+        }
+
+        val quotientScale = quotient.scale
+
+        // divide(BigDecimal, mc) tries to adjust the quotient to
+        // the desired one by removing trailing zeros; since the
+        // exact divide method does not have an explicit digit
+        // limit, we can add zeros too.
+        if (preferredScale > quotientScale)
+            return quotient.setScale(preferredScale, RoundingMode.UNNECESSARY)
+
+        return quotient
     }
 
     /**
@@ -1214,12 +1952,12 @@ class BigDecimal internal constructor(
             if (divisor.intCompact != INFLATED) {
                 return divide(this.intCompact, this.scale, divisor.intCompact, divisor.scale, scale, roundingMode)
             }
-            return divide(this.intCompact, this.scale, divisor.intVal, divisor.scale, scale, roundingMode)
+            return divide(this.intCompact, this.scale, divisor.intVal!!, divisor.scale, scale, roundingMode)
         }
         if (divisor.intCompact != INFLATED) {
-            return divide(this.intVal, this.scale, divisor.intCompact, divisor.scale, scale, roundingMode)
+            return divide(this.intVal!!, this.scale, divisor.intCompact, divisor.scale, scale, roundingMode)
         }
-        return divide(this.intVal, this.scale, divisor.intVal, divisor.scale, scale, roundingMode)
+        return divide(this.intVal!!, this.scale, divisor.intVal!!, divisor.scale, scale, roundingMode)
     }
 
     /**
@@ -1238,6 +1976,123 @@ class BigDecimal internal constructor(
      */
     fun divide(divisor: BigDecimal, roundingMode: RoundingMode): BigDecimal {
         return divide(divisor, this.scale, roundingMode)
+    }
+
+    /**
+     * Returns a `BigDecimal` whose value is `(this /
+     * divisor)`, with rounding according to the context settings.
+     * @param  divisor value by which this `BigDecimal` is to be divided.
+     * @param  mc the context to use.
+     * @return `this / divisor`, rounded as necessary.
+     * @throws ArithmeticException if the result is inexact but the
+     * *         rounding mode is `UNNECESSARY` or
+     * *         `mc.precision == 0` and the quotient has a
+     * *         non-terminating decimal expansion.
+     */
+    fun divide(divisor: BigDecimal, mc: MathContext): BigDecimal {
+        val mcp = mc.precision
+        if (mcp == 0)
+            return divide(divisor)
+
+        val dividend = this
+        val preferredScale = dividend.scale.toLong() - divisor.scale
+        // Now calculate the answer.  We use the existing
+        // divide-and-round method, but as this rounds to scale we have
+        // to normalize the values here to achieve the desired result.
+        // For x/y we first handle y=0 and x=0, and then normalize x and
+        // y to give x' and y' with the following constraints:
+        //   (a) 0.1 <= x' < 1
+        //   (b)  x' <= y' < 10*x'
+        // Dividing x'/y' with the required scale set to mc.precision then
+        // will give a result in the range 0.1 to 1 rounded to exactly
+        // the right number of digits (except in the case of a result of
+        // 1.000... which can arise when x=y, or when rounding overflows
+        // The 1.000... case will reduce properly to 1.
+        if (divisor.signum() == 0) {      // x/0
+            if (dividend.signum() == 0)   // 0/0
+                throw ArithmeticException("Division undefined")  // NaN
+            throw ArithmeticException("Division by zero")
+        }
+        if (dividend.signum() == 0)  // 0/y
+            return zeroValueOf(saturateLong(preferredScale))
+        val xscale = dividend.precision
+        val yscale = divisor.precision
+        if (dividend.intCompact != INFLATED) {
+            if (divisor.intCompact != INFLATED) {
+                return divide(dividend.intCompact, xscale, divisor.intCompact, yscale, preferredScale, mc)
+            }
+            return divide(dividend.intCompact, xscale, divisor.intVal!!, yscale, preferredScale, mc)
+        }
+        if (divisor.intCompact != INFLATED) {
+            return divide(dividend.intVal!!, xscale, divisor.intCompact, yscale, preferredScale, mc)
+        }
+        return divide(dividend.intVal!!, xscale, divisor.intVal!!, yscale, preferredScale, mc)
+    }
+
+    /**
+     * Returns a two-element `BigDecimal` array containing the
+     * result of `divideToIntegralValue` followed by the result of
+     * `remainder` on the two operands.
+     *
+     * Note that if both the integer quotient and remainder are
+     * needed, this method is faster than using the
+     * `divideToIntegralValue` and `remainder` methods
+     * separately because the division need only be carried out once.
+     *
+     * @param  divisor value by which this `BigDecimal` is to be divided,
+     * *         and the remainder computed.
+     * @return a two element `BigDecimal` array: the quotient
+     * *         (the result of `divideToIntegralValue`) is the initial element
+     * *         and the remainder is the final element.
+     * @throws ArithmeticException if `divisor==0`
+     * @see .divideToIntegralValue
+     * @see .remainder
+     */
+    fun divideAndRemainder(divisor: BigDecimal): Array<BigDecimal> {
+        // we use the identity  x = i * y + r to determine r
+        val q = this.divideToIntegralValue(divisor)
+        return arrayOf(q, this.subtract(q.multiply(divisor)))
+    }
+
+    /**
+     * Returns a `BigDecimal` whose value is the integer part
+     * of the quotient `(this / divisor)` rounded down.  The
+     * preferred scale of the result is `(this.scale() -
+     * divisor.scale())`.
+     * @param  divisor value by which this `BigDecimal` is to be divided.
+     * @return The integer part of `this / divisor`.
+     * @throws ArithmeticException if `divisor==0`
+     */
+    fun divideToIntegralValue(divisor: BigDecimal): BigDecimal {
+        // Calculate preferred scale
+        val preferredScale = saturateLong(this.scale.toLong() - divisor.scale)
+        if (this.compareMagnitude(divisor) < 0) {
+            // much faster when this << divisor
+            return zeroValueOf(preferredScale)
+        }
+
+        if (this.signum() == 0 && divisor.signum() != 0)
+            return this.setScale(preferredScale, RoundingMode.UNNECESSARY)
+
+        // Perform a divide with enough digits to round to a correct
+        // integer value; then remove any fractional digits
+
+        val maxDigits = Math.min(this.precision +
+                Math.ceil(10.0 * divisor.precision / 3.0).toLong() +
+                Math.abs(this.scale.toLong() - divisor.scale) + 2,
+                Int.MAX_VALUE.toLong()) as Int
+        var quotient = this.divide(divisor, MathContext(maxDigits, RoundingMode.DOWN))
+        if (quotient.scale > 0) {
+            quotient = quotient.setScale(0, RoundingMode.DOWN)
+            quotient = stripZerosToMatchScale(quotient.intVal, quotient.intCompact, quotient.scale, preferredScale)
+        }
+
+        if (quotient.scale < preferredScale) {
+            // pad with zeros if necessary
+            quotient = quotient.setScale(preferredScale, RoundingMode.UNNECESSARY)
+        }
+
+        return quotient
     }
 
     override fun toByte(): Byte {
@@ -1475,4 +2330,54 @@ class BigDecimal internal constructor(
     private fun inflated(): BigInteger {
         return intVal ?: BigInteger.valueOf(intCompact)
     }
+
+    /**
+     * Version of compareTo that ignores sign.
+     */
+    private fun compareMagnitude(v: BigDecimal): Int {
+        // Match scales, avoid unnecessary inflation
+        var ys = v.intCompact
+        var xs = this.intCompact
+        if (0L == xs)
+            return if (0L == ys) 0 else -1
+        if (0L == ys)
+            return 1
+
+        val sdiff = this.scale.toLong() - v.scale
+        if (sdiff != 0L) {
+            // Avoid matching scales if the (adjusted) exponents differ
+            val xae = this.precision.toLong() - this.scale   // [-1]
+            val yae = v.precision.toLong() - v.scale     // [-1]
+            if (xae < yae)
+                return -1
+            if (xae > yae)
+                return 1
+            var rb: BigInteger? = null
+            if (sdiff < 0) {
+                // The cases sdiff <= Integer.MIN_VALUE intentionally fall through.
+                if (sdiff > Int.MIN_VALUE && xs != INFLATED) {
+                    xs = longMultiplyPowerTen(xs, (-sdiff).toInt())
+                }
+                if (sdiff > Int.MIN_VALUE && xs == INFLATED && ys == INFLATED) {
+                    rb = bigMultiplyPowerTen((-sdiff).toInt())
+                    return rb.compareMagnitude(v.intVal!!)
+                }
+            } else { // sdiff > 0
+                // The cases sdiff > Integer.MAX_VALUE intentionally fall through.
+                if (sdiff <= Int.MIN_VALUE && ys != INFLATED) {
+                    ys = longMultiplyPowerTen(ys, sdiff.toInt())
+                }
+                if (sdiff <= Int.MAX_VALUE && ys == INFLATED && xs == INFLATED) {
+                    rb = v.bigMultiplyPowerTen(sdiff.toInt())
+                    return this.intVal!!.compareMagnitude(rb)
+                }
+            }
+        }
+        if (xs != INFLATED)
+            return if (ys != INFLATED) longCompareMagnitude(xs, ys) else -1
+        if (ys != INFLATED)
+            return 1
+        return this.intVal!!.compareMagnitude(v.intVal!!)
+    }
+
 }

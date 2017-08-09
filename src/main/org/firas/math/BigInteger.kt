@@ -1923,6 +1923,74 @@ class BigInteger internal constructor(
         return BigInteger(signum, trustedStripLeadingZeroInts(result))
     }
 
+    /**
+     * Returns an array of two BigIntegers containing `(this / val)`
+     * followed by `(this % val)`.
+
+     * @param  v value by which this BigInteger is to be divided, and the
+     * *         remainder computed.
+     * *
+     * @return an array of two BigIntegers: the quotient `(this / val)`
+     * *         is the initial element, and the remainder `(this % val)`
+     * *         is the final element.
+     * *
+     * @throws ArithmeticException if v is zero.
+     */
+    fun divideAndRemainder(v: BigInteger): Array<BigInteger> {
+        if (v.mag.size < BURNIKEL_ZIEGLER_THRESHOLD || mag.size - v.mag.size < BURNIKEL_ZIEGLER_OFFSET) {
+            return divideAndRemainderKnuth(v)
+        } else {
+            return divideAndRemainderBurnikelZiegler(v)
+        }
+    }
+
+    /** Long division  */
+    private fun divideAndRemainderKnuth(v: BigInteger): Array<BigInteger> {
+        val q = MutableBigInteger()
+        val a = MutableBigInteger(this.mag)
+        val b = MutableBigInteger(v.mag)
+        val r = a.divideKnuth(b, q)!!
+        return arrayOf(
+                q.toBigInteger(if (this.signum == v.signum) 1 else -1),
+                r.toBigInteger(this.signum)
+        )
+    }
+
+    /**
+     * Calculates `this / val` using the Burnikel-Ziegler algorithm.
+     * @param  v the divisor
+     * *
+     * @return `this / val`
+     */
+    private fun divideBurnikelZiegler(v: BigInteger): BigInteger {
+        return divideAndRemainderBurnikelZiegler(v)[0]
+    }
+
+    /**
+     * Calculates `this % val` using the Burnikel-Ziegler algorithm.
+     * @param v the divisor
+     * *
+     * @return `this % val`
+     */
+    private fun remainderBurnikelZiegler(v: BigInteger): BigInteger {
+        return divideAndRemainderBurnikelZiegler(v)[1]
+    }
+
+    /**
+     * Computes `this / val` and `this % val` using the
+     * Burnikel-Ziegler algorithm.
+     * @param v the divisor
+     * *
+     * @return an array containing the quotient and remainder
+     */
+    private fun divideAndRemainderBurnikelZiegler(v: BigInteger): Array<BigInteger> {
+        val q = MutableBigInteger()
+        val r = MutableBigInteger(this).divideAndRemainderBurnikelZiegler(MutableBigInteger(v), q)
+        val qBigInt = if (q.isZero) ZERO else q.toBigInteger(signum * v.signum)
+        val rBigInt = if (r.isZero) ZERO else r.toBigInteger(signum)
+        return arrayOf(qBigInt, rBigInt)
+    }
+
 
     /**
      * Throws an {@code ArithmeticException} if the {@code BigInteger} would be
