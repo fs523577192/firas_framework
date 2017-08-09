@@ -82,7 +82,7 @@ class Instant private constructor(val epochSecond: Long, val nanos: Int):
          */
         private fun create(seconds: Long, nanoOfSecond: Int): Instant {
             if ((seconds or nanoOfSecond.toLong()) == 0L) {
-                return EPOCH;
+                return EPOCH
             }
             if (seconds < MIN_SECOND || seconds > MAX_SECOND) {
                 throw DateTimeException("Instant exceeds minimum or maximum instant")
@@ -162,12 +162,83 @@ class Instant private constructor(val epochSecond: Long, val nanos: Int):
         return field.isSupportedBy(this)
     }
 
-    override fun with(field: TemporalField, newValue: Long): Temporal {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
-    }
-
+    /**
+     * Returns a copy of this instant with the specified amount added.
+     * <p>
+     * This returns an {@code Instant}, based on this one, with the amount
+     * in terms of the unit added. If it is not possible to add the amount, because the
+     * unit is not supported or for some other reason, an exception is thrown.
+     * <p>
+     * If the field is a {@link ChronoUnit} then the addition is implemented here.
+     * The supported fields behave as follows:
+     * <ul>
+     * <li>{@code NANOS} -
+     *  Returns a {@code Instant} with the specified number of nanoseconds added.
+     *  This is equivalent to {@link #plusNanos(long)}.
+     * <li>{@code MICROS} -
+     *  Returns a {@code Instant} with the specified number of microseconds added.
+     *  This is equivalent to {@link #plusNanos(long)} with the amount
+     *  multiplied by 1,000.
+     * <li>{@code MILLIS} -
+     *  Returns a {@code Instant} with the specified number of milliseconds added.
+     *  This is equivalent to {@link #plusNanos(long)} with the amount
+     *  multiplied by 1,000,000.
+     * <li>{@code SECONDS} -
+     *  Returns a {@code Instant} with the specified number of seconds added.
+     *  This is equivalent to {@link #plusSeconds(long)}.
+     * <li>{@code MINUTES} -
+     *  Returns a {@code Instant} with the specified number of minutes added.
+     *  This is equivalent to {@link #plusSeconds(long)} with the amount
+     *  multiplied by 60.
+     * <li>{@code HOURS} -
+     *  Returns a {@code Instant} with the specified number of hours added.
+     *  This is equivalent to {@link #plusSeconds(long)} with the amount
+     *  multiplied by 3,600.
+     * <li>{@code HALF_DAYS} -
+     *  Returns a {@code Instant} with the specified number of half-days added.
+     *  This is equivalent to {@link #plusSeconds(long)} with the amount
+     *  multiplied by 43,200 (12 hours).
+     * <li>{@code DAYS} -
+     *  Returns a {@code Instant} with the specified number of days added.
+     *  This is equivalent to {@link #plusSeconds(long)} with the amount
+     *  multiplied by 86,400 (24 hours).
+     * </ul>
+     * <p>
+     * All other {@code ChronoUnit} instances will throw an {@code UnsupportedTemporalTypeException}.
+     * <p>
+     * If the field is not a {@code ChronoUnit}, then the result of this method
+     * is obtained by invoking {@code TemporalUnit.addTo(Temporal, long)}
+     * passing {@code this} as the argument. In this case, the unit determines
+     * whether and how to perform the addition.
+     * <p>
+     * This instance is immutable and unaffected by this method call.
+     *
+     * @param amountToAdd  the amount of the unit to add to the result, may be negative
+     * @param unit  the unit of the amount to add, not null
+     * @return an {@code Instant} based on this instant with the specified amount added, not null
+     * @throws DateTimeException if the addition cannot be made
+     * @throws UnsupportedTemporalTypeException if the unit is not supported
+     * @throws ArithmeticException if numeric overflow occurs
+     */
     override fun plus(amountToAdd: Long, unit: TemporalUnit): Temporal {
-        TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
+        if (unit is ChronoUnit) {
+            when (unit) {
+                ChronoUnit.NANOS -> return plusNanos(amountToAdd)
+                ChronoUnit.MICROS -> return plus(amountToAdd / 1000_000, (amountToAdd % 1000_000) * 1000)
+                ChronoUnit.MILLIS -> return plusMillis(amountToAdd)
+                ChronoUnit.SECONDS -> return plusSeconds(amountToAdd)
+                ChronoUnit.MINUTES -> return plusSeconds(Math.multiplyExact(amountToAdd,
+                        LocalTime.SECONDS_PER_MINUTE.toLong()))
+                ChronoUnit.HOURS -> return plusSeconds(Math.multiplyExact(amountToAdd,
+                        LocalTime.SECONDS_PER_HOUR.toLong()))
+                ChronoUnit.HALF_DAYS -> return plusSeconds(Math.multiplyExact(amountToAdd,
+                        LocalTime.SECONDS_PER_DAY.toLong().shr(1)))
+                ChronoUnit.DAYS -> return plusSeconds(Math.multiplyExact(amountToAdd,
+                        LocalTime.SECONDS_PER_DAY.toLong()))
+            }
+            throw UnsupportedTemporalTypeException("Unsupported unit: " + unit)
+        }
+        return unit.addTo(this, amountToAdd)
     }
 
     override fun until(endExclusive: Temporal, unit: TemporalUnit): Long {
@@ -250,7 +321,6 @@ class Instant private constructor(val epochSecond: Long, val nanos: Int):
      * @throws UnsupportedTemporalTypeException if the field is not supported
      * @throws ArithmeticException if numeric overflow occurs
      */
-    /*
     override fun with(field: TemporalField, newValue: Long): Temporal {
         if (field is ChronoField) {
             field.checkValidValue(newValue)
@@ -296,12 +366,75 @@ class Instant private constructor(val epochSecond: Long, val nanos: Int):
      * @throws DateTimeException if the addition cannot be made
      * @throws ArithmeticException if numeric overflow occurs
      */
-    override fun plus(amount: TemporalAmount): Temporal {
-        return
+    override fun plus(amount: TemporalAmount): Instant {
+        return amount.addTo(this) as Instant
     }
-    */
 
     override fun equals(other: Any?): Boolean {
         return other is Instant && epochSecond == other.epochSecond && nanos == other.nanos
+    }
+
+    /**
+     * Returns a copy of this instant with the specified duration in seconds added.
+     * <p>
+     * This instance is immutable and unaffected by this method call.
+     *
+     * @param secondsToAdd  the seconds to add, positive or negative
+     * @return an {@code Instant} based on this instant with the specified seconds added, not null
+     * @throws DateTimeException if the result exceeds the maximum or minimum instant
+     * @throws ArithmeticException if numeric overflow occurs
+     */
+    fun plusSeconds(secondsToAdd: Long): Instant {
+        return plus(secondsToAdd, 0)
+    }
+
+    /**
+     * Returns a copy of this instant with the specified duration in milliseconds added.
+     * <p>
+     * This instance is immutable and unaffected by this method call.
+     *
+     * @param millisToAdd  the milliseconds to add, positive or negative
+     * @return an {@code Instant} based on this instant with the specified milliseconds added, not null
+     * @throws DateTimeException if the result exceeds the maximum or minimum instant
+     * @throws ArithmeticException if numeric overflow occurs
+     */
+    fun plusMillis(millisToAdd: Long): Instant {
+        return plus(millisToAdd / 1000, (millisToAdd % 1000) * 1000_000)
+    }
+
+    /**
+     * Returns a copy of this instant with the specified duration in nanoseconds added.
+     * <p>
+     * This instance is immutable and unaffected by this method call.
+     *
+     * @param nanosToAdd  the nanoseconds to add, positive or negative
+     * @return an {@code Instant} based on this instant with the specified nanoseconds added, not null
+     * @throws DateTimeException if the result exceeds the maximum or minimum instant
+     * @throws ArithmeticException if numeric overflow occurs
+     */
+    fun plusNanos(nanosToAdd: Long): Instant {
+        return plus(0, nanosToAdd)
+    }
+
+    /**
+     * Returns a copy of this instant with the specified duration added.
+     * <p>
+     * This instance is immutable and unaffected by this method call.
+     *
+     * @param secondsToAdd  the seconds to add, positive or negative
+     * @param nanosToAdd  the nanos to add, positive or negative
+     * @return an {@code Instant} based on this instant with the specified seconds added, not null
+     * @throws DateTimeException if the result exceeds the maximum or minimum instant
+     * @throws ArithmeticException if numeric overflow occurs
+     */
+    private fun plus(secondsToAdd: Long, nanosToAdd: Long): Instant {
+        if (secondsToAdd.or(nanosToAdd) == 0L) {
+            return this
+        }
+        var epochSec = Math.addExact(epochSecond, secondsToAdd)
+        epochSec = Math.addExact(epochSec, nanosToAdd / LocalTime.NANOS_PER_SECOND)
+        val nanosToAdd = nanosToAdd % LocalTime.NANOS_PER_SECOND
+        val nanoAdjustment = nanos + nanosToAdd  // safe int+NANOS_PER_SECOND
+        return ofEpochSecond(epochSec, nanoAdjustment)
     }
 }

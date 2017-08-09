@@ -15,11 +15,11 @@ class Arrays {
             fill(a, element, fromIndex, a.size)
         }
 
-        fun copyOf(original: IntArray, newLength: Int): IntArray {
+        inline fun copyOf(original: IntArray, newLength: Int): IntArray {
             return original.copyOf(newLength)
         }
 
-        fun copyOfRange(original: IntArray, from: Int, to: Int): IntArray {
+        inline fun copyOfRange(original: IntArray, from: Int, to: Int): IntArray {
             return original.copyOfRange(from, to)
         }
     }

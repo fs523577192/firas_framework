@@ -62,6 +62,7 @@
 package org.firas.time
 
 import org.firas.lang.Math
+import org.firas.math.BigDecimal
 import org.firas.time.temporal.*
 
 /**
@@ -446,12 +447,8 @@ class Duration private constructor(val seconds: Long, val nanos: Int): Comparabl
      * @throws ArithmeticException if numeric overflow occurs
      */
     fun multipliedBy(multiplicand: Long): Duration {
-        if (multiplicand == 0L) {
-            return ZERO
-        }
-        if (multiplicand == 1L) {
-            return this
-        }
+        if (multiplicand == 0L) return ZERO
+        if (multiplicand == 1L) return this
         return create(toSeconds().multiply(BigDecimal.valueOf(multiplicand)))
     }
 

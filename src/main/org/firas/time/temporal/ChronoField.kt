@@ -909,11 +909,9 @@ enum class ChronoField(
         return temporal.getLong(this)
     }
 
-    /*
     override fun <R : Temporal> adjustInto(temporal: R, newValue: Long): R {
-        return temporal.with(this, newValue)
+        return temporal.with(this, newValue) as R
     }
-    */
 
     override fun toString(): String {
         return name

@@ -385,4 +385,8 @@ enum class ChronoUnit(val unitName: String, val duration: Duration) : TemporalUn
     override fun isSupportedBy(temporal: Temporal): Boolean {
         return temporal.isSupported(this)
     }
+
+    override fun <R : Temporal> addTo(temporal: R, amount: Long): R {
+        return temporal.plus(amount, this) as R
+    }
 }
