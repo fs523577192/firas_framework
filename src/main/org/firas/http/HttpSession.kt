@@ -21,7 +21,7 @@ abstract class HttpSession(val id: String,
 
     open fun setMaxInactiveInterval(maxInactiveInterval: Int) {
         if (maxInactiveInterval <= 0)
-            throw IllegalAugumentException("\"maxInactiveInterval\" is not positive")
+            throw IllegalArgumentException("\"maxInactiveInterval\" is not positive")
         this.maxInactiveInterval = maxInactiveInterval
     }
 

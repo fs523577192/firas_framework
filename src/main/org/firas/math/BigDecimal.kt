@@ -2095,6 +2095,54 @@ class BigDecimal internal constructor(
         return quotient
     }
 
+    /**
+     * Returns a `BigDecimal` which is equivalent to this one
+     * with the decimal point moved `n` places to the left.  If
+     * `n` is non-negative, the call merely adds `n` to
+     * the scale.  If `n` is negative, the call is equivalent
+     * to `movePointRight(-n)`.  The `BigDecimal`
+     * returned by this call has value <tt>(this
+     * 10<sup>-n</sup>)</tt> and scale `max(this.scale()+n,
+     * 0)`.
+
+     * @param  n number of places to move the decimal point to the left.
+     * *
+     * @return a `BigDecimal` which is equivalent to this one with the
+     * *         decimal point moved `n` places to the left.
+     * *
+     * @throws ArithmeticException if scale overflows.
+     */
+    fun movePointLeft(n: Int): BigDecimal {
+        // Cannot use movePointRight(-n) in case of n==Integer.MIN_VALUE
+        val newScale = checkScale(scale.toLong() + n)
+        val num = BigDecimal(intVal, intCompact, newScale, 0)
+        return if (num.scale < 0) num.setScale(0, RoundingMode.UNNECESSARY) else num
+    }
+
+    /**
+     * Returns a `BigDecimal` which is equivalent to this one
+     * with the decimal point moved `n` places to the right.
+     * If `n` is non-negative, the call merely subtracts
+     * `n` from the scale.  If `n` is negative, the call
+     * is equivalent to `movePointLeft(-n)`.  The
+     * `BigDecimal` returned by this call has value <tt>(this
+     *  10<sup>n</sup>)</tt> and scale `max(this.scale()-n,
+     * 0)`.
+
+     * @param  n number of places to move the decimal point to the right.
+     * *
+     * @return a `BigDecimal` which is equivalent to this one
+     * *         with the decimal point moved `n` places to the right.
+     * *
+     * @throws ArithmeticException if scale overflows.
+     */
+    fun movePointRight(n: Int): BigDecimal {
+        // Cannot use movePointLeft(-n) in case of n==Integer.MIN_VALUE
+        val newScale = checkScale(scale.toLong() - n)
+        val num = BigDecimal(intVal, intCompact, newScale, 0)
+        return if (num.scale < 0) num.setScale(0, RoundingMode.UNNECESSARY) else num
+    }
+
     override fun toByte(): Byte {
         TODO("not implemented") //To change body of created functions use File | Settings | File Templates.
     }
@@ -2176,6 +2224,23 @@ class BigDecimal internal constructor(
      */
     fun toBigInteger(): BigInteger {
         return setScale(0, RoundingMode.DOWN).inflated()
+    }
+
+    /**
+     * Converts this `BigDecimal` to a `BigInteger`,
+     * checking for lost information.  An exception is thrown if this
+     * `BigDecimal` has a nonzero fractional part.
+
+     * @return this `BigDecimal` converted to a `BigInteger`.
+     * *
+     * @throws ArithmeticException if `this` has a nonzero
+     * *         fractional part.
+     * *
+     * @since  1.5
+     */
+    fun toBigIntegerExact(): BigInteger {
+        // round to an integer, with Exception if decimal part non-0
+        return this.setScale(0, RoundingMode.UNNECESSARY).inflated()
     }
 
     /**

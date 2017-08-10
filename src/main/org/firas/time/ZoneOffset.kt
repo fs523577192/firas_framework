@@ -101,7 +101,7 @@ import org.firas.lang.Math
  *
  * @implSpec
  */
-class ZoneOffset(val totalSeconds: Int) {
+class ZoneOffset private constructor(val totalSeconds: Int): ZoneId() {
 
     companion object {
         /**
@@ -348,9 +348,12 @@ class ZoneOffset(val totalSeconds: Int) {
         private val ID_CACHE = HashMap<String, ZoneOffset>(16)
     }
 
-    var id: String
+    private val id: String
     init {
         id = buildId(totalSeconds)
+    }
+    override fun getId(): String {
+        return id
     }
 
 }

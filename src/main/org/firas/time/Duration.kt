@@ -61,8 +61,10 @@
  */
 package org.firas.time
 
+import org.firas.lang.ArithmeticException
 import org.firas.lang.Math
 import org.firas.math.BigDecimal
+import org.firas.math.BigInteger
 import org.firas.time.temporal.*
 
 /**
@@ -287,6 +289,24 @@ class Duration private constructor(val seconds: Long, val nanos: Int): Comparabl
         }
 
         /**
+         * Creates an instance of {@code Duration} from a number of seconds.
+         *
+         * @param seconds  the number of seconds, up to scale 9, positive or negative
+         * @return a {@code Duration}, not null
+         * @throws ArithmeticException if numeric overflow occurs
+         */
+        private fun create(seconds: BigDecimal): Duration {
+            val nanos = seconds.movePointRight(9).toBigIntegerExact()
+            val divRem = nanos.divideAndRemainder(BI_NANOS_PER_SECOND)
+            if (divRem[0].bitLength() > 63) {
+                throw ArithmeticException("Exceeds capacity of Duration: " + nanos)
+            }
+            return ofSeconds(divRem[0].toLong(), divRem[1].toLong())
+        }
+
+        private val BI_NANOS_PER_SECOND = BigInteger.valueOf(LocalTime.NANOS_PER_SECOND)
+
+        /**
          * The pattern for parsing.
          */
         private val PATTERN: Regex = Regex("([-+]?)P(?:([-+]?[0-9]+)D)?" +
@@ -485,6 +505,7 @@ class Duration private constructor(val seconds: Long, val nanos: Int): Comparabl
      * @return the total length of the duration in seconds, with a scale of 9, not null
      */
     private fun toSeconds(): BigDecimal {
-        return BigDecimal.valueOf(seconds).add(BigDecimal.valueOf(nanos, 9))
+        return BigDecimal.valueOf(seconds).add(
+                BigDecimal.valueOf(nanos.toLong(), 9))
     }
 }

@@ -1,5 +1,7 @@
 package org.firas.util
 
+import org.firas.time.Clock
+
 /**
  * Not thread-safe
  */
@@ -29,7 +31,7 @@ open class Random(var seed:Long) {
         }
     }
 
-    public constructor(): this(getSeedUniquifier() xor Clock.SystemClock.millis())
+    constructor(): this(getSeedUniquifier() xor Clock.systemDefault.millis())
 
     init {
         seed = initialScramble(seed)

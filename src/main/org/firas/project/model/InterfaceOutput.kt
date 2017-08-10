@@ -1,6 +1,7 @@
 package org.firas.project.model
 
 import org.firas.orm.model.DataType
+import org.firas.orm.model.IdModel
 
 class InterfaceOutput(
     val name: String,

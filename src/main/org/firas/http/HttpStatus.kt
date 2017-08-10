@@ -28,7 +28,7 @@ package org.firas.http
  * @see <a href="http://www.iana.org/assignments/http-status-codes">HTTP Status Code Registry</a>
  * @see <a href="http://en.wikipedia.org/wiki/List_of_HTTP_status_codes">List of HTTP status codes - Wikipedia</a>
  */
-enum HttpStatus(val code: Int, val name: String) {
+enum class HttpStatus(val code: Int, val description: String) {
 
     // 1xx Informational
 
@@ -129,7 +129,7 @@ enum HttpStatus(val code: Int, val name: String) {
      * @see <a href="http://tools.ietf.org/html/rfc1945#section-9.3">HTTP/1.0, section 9.3</a>
      * @deprecated in favor of {@link #FOUND} which will be returned from {@code HttpStatus.valueOf(302)}
      */
-    @Deprecated
+    @Deprecated("", ReplaceWith("FOUND"))
     MOVED_TEMPORARILY(302, "Moved Temporarily"),
     /**
      * {@code 303 See Other}.
@@ -144,9 +144,8 @@ enum HttpStatus(val code: Int, val name: String) {
     /**
      * {@code 305 Use Proxy}.
      * @see <a href="http://tools.ietf.org/html/rfc7231#section-6.4.5">HTTP/1.1: Semantics and Content, section 6.4.5</a>
-     * @deprecated due to security concerns regarding in-band configuration of a proxy
      */
-    @Deprecated
+    @Deprecated("due to security concerns regarding in-band configuration of a proxy")
     USE_PROXY(305, "Use Proxy"),
     /**
      * {@code 307 Temporary Redirect}.
@@ -237,7 +236,7 @@ enum HttpStatus(val code: Int, val name: String) {
      * @see <a href="http://tools.ietf.org/html/rfc2616#section-10.4.14">HTTP/1.1, section 10.4.14</a>
      * @deprecated in favor of {@link #PAYLOAD_TOO_LARGE} which will be returned from {@code HttpStatus.valueOf(413)}
      */
-    @Deprecated
+    @Deprecated("", ReplaceWith("PAYLOAD_TOO_LARGE"))
     REQUEST_ENTITY_TOO_LARGE(413, "Request Entity Too Large"),
     /**
      * {@code 414 URI Too Long}.
@@ -250,7 +249,7 @@ enum HttpStatus(val code: Int, val name: String) {
      * @see <a href="http://tools.ietf.org/html/rfc2616#section-10.4.15">HTTP/1.1, section 10.4.15</a>
      * @deprecated in favor of {@link #URI_TOO_LONG} which will be returned from {@code HttpStatus.valueOf(414)}
      */
-    @Deprecated
+    @Deprecated("", ReplaceWith("URI_TOO_LONG"))
     REQUEST_URI_TOO_LONG(414, "Request-URI Too Long"),
     /**
      * {@code 415 Unsupported Media Type}.
@@ -275,17 +274,17 @@ enum HttpStatus(val code: Int, val name: String) {
     /**
      * @deprecated See <a href="http://tools.ietf.org/rfcdiff?difftype=--hwdiff&url2=draft-ietf-webdav-protocol-06.txt">WebDAV Draft Changes</a>
      */
-    @Deprecated
+    @Deprecated("")
     INSUFFICIENT_SPACE_ON_RESOURCE(419, "Insufficient Space On Resource"),
     /**
      * @deprecated See <a href="http://tools.ietf.org/rfcdiff?difftype=--hwdiff&url2=draft-ietf-webdav-protocol-06.txt">WebDAV Draft Changes</a>
      */
-    @Deprecated
+    @Deprecated("")
     METHOD_FAILURE(420, "Method Failure"),
     /**
      * @deprecated See <a href="http://tools.ietf.org/rfcdiff?difftype=--hwdiff&url2=draft-ietf-webdav-protocol-06.txt">WebDAV Draft Changes</a>
      */
-    @Deprecated
+    @Deprecated("")
     DESTINATION_LOCKED(421, "Destination Locked"),
     /**
      * {@code 422 Unprocessable Entity}.
@@ -390,13 +389,13 @@ enum HttpStatus(val code: Int, val name: String) {
      * {@code 511 Network Authentication Required}.
      * @see <a href="http://tools.ietf.org/html/rfc6585#section-6">Additional HTTP Status Codes</a>
      */
-    NETWORK_AUTHENTICATION_REQUIRED(511, "Network Authentication Required")
+    NETWORK_AUTHENTICATION_REQUIRED(511, "Network Authentication Required");
 
     /**
      * Enumeration of HTTP status series.
      * <p>Retrievable via {@link HttpStatus#series()}.
      */
-    enum Series(val value: Byte) {
+    enum class Series(val value: Byte) {
         INFORMATIONAL(1),
         SUCCESSFUL(2),
         REDIRECTION(3),

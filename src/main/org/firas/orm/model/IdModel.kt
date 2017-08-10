@@ -1,4 +1,4 @@
 package org.firas.orm.model
 
-open class IdModel(val table: String) : StatusModel(table) {
+open class IdModel(table: String) : StatusModel(table) {
 }

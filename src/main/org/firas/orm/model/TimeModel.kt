@@ -1,5 +1,5 @@
 package org.firas.orm.model
 
-open class TimeModel(val table: String) : BaseModel(table) {
+open class TimeModel(table: String) : BaseModel(table) {
 
 }
