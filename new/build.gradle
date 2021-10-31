@@ -1,0 +1,67 @@
+//import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTargetWithTests
+
+buildscript {
+    repositories {
+        mavenLocal()
+        maven {
+            url 'https://maven.aliyun.com/repository/central'
+        }
+        mavenCentral()
+    }
+}
+plugins {
+    id 'org.jetbrains.kotlin.multiplatform' version '1.5.31'
+}
+
+group = 'tech.firas.framework'
+version = '0.1.0-SNAPSHOT'
+
+repositories {
+    mavenLocal()
+    maven {
+        url 'https://maven.aliyun.com/repository/central'
+    }
+    mavenCentral()
+}
+kotlin {
+    jvm {
+        compilations.all {
+            kotlinOptions.jvmTarget = '1.7'
+        }
+        testRuns["test"].executionTask.configure {
+            useJUnit()
+        }
+    }
+    js(LEGACY) {
+        browser {
+            commonWebpackConfig {
+                cssSupport.enabled = true
+            }
+        }
+    }
+    
+    sourceSets {
+        commonMain {
+            dependencies {
+                implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.3.0")
+            }
+        }
+        commonTest {
+            dependencies {
+                implementation kotlin('test')
+            }
+        }
+        jvmMain {
+
+        }
+        jvmTest {
+
+        }
+        jsMain {
+
+        }
+        jsTest {
+
+        }
+    }
+}
