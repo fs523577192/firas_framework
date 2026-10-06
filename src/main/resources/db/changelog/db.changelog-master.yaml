@@ -1,0 +1,151 @@
+databaseChangeLog:
+  - changeSet:
+      id: 001-create-ac-permission
+      author: lowcode
+      comment: Permission is the atomic unit of authorization.
+      changes:
+        - createTable:
+            tableName: ac_permission
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: code
+                  type: varchar(128)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_ac_permission_code
+              - column:
+                  name: description
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 002-create-ac-role
+      author: lowcode
+      comment: >-
+        A Role is a named bundle of Permissions. Deleting a Role drops its own
+        PermissionGrants, but a Permission that Roles still carry cannot be deleted.
+      changes:
+        - createTable:
+            tableName: ac_role
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: code
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_ac_role_code
+              - column:
+                  name: description
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: ac_permission_grant
+            columns:
+              - column:
+                  name: role_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permission_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: ac_permission_grant
+            columnNames: role_id, permission_id
+            constraintName: pk_ac_permission_grant
+        - addForeignKeyConstraint:
+            constraintName: fk_ac_permission_grant_role
+            baseTableName: ac_permission_grant
+            baseColumnNames: role_id
+            referencedTableName: ac_role
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_ac_permission_grant_permission
+            baseTableName: ac_permission_grant
+            baseColumnNames: permission_id
+            referencedTableName: ac_permission
+            referencedColumnNames: id
+
+  - changeSet:
+      id: 003-create-ac-user
+      author: lowcode
+      comment: >-
+        A User is an authenticatable identity. Deleting a User drops their own
+        RoleAssignments, but a Role that Users still hold cannot be deleted.
+      changes:
+        - createTable:
+            tableName: ac_user
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: username
+                  type: varchar(64)
+                  constraints:
+                    nullable: false
+                    unique: true
+                    uniqueConstraintName: uq_ac_user_username
+              - column:
+                  name: password_hash
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: enabled
+                  type: boolean
+                  defaultValueBoolean: true
+                  constraints:
+                    nullable: false
+        - createTable:
+            tableName: ac_role_assignment
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: role_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: ac_role_assignment
+            columnNames: user_id, role_id
+            constraintName: pk_ac_role_assignment
+        - addForeignKeyConstraint:
+            constraintName: fk_ac_role_assignment_user
+            baseTableName: ac_role_assignment
+            baseColumnNames: user_id
+            referencedTableName: ac_user
+            referencedColumnNames: id
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            constraintName: fk_ac_role_assignment_role
+            baseTableName: ac_role_assignment
+            baseColumnNames: role_id
+            referencedTableName: ac_role
+            referencedColumnNames: id

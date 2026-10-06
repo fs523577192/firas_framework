@@ -1,0 +1,61 @@
+"""An authenticatable identity, the Roles it holds, and its Effective Permissions."""
+type User {
+    username: String!
+    enabled: Boolean!
+    roleCodes: [String!]!
+    permissions: [String!]!
+}
+
+"""A named bundle of Permissions that can be assigned to Users."""
+type Role {
+    code: String!
+    description: String!
+    permissionCodes: [String!]!
+}
+
+"""The atomic unit of authorization."""
+type Permission {
+    code: String!
+    description: String!
+}
+
+"""The outcome of asking whether the caller holds a given PermissionCode."""
+type AuthorizationDecision {
+    allowed: Boolean!
+    reason: String!
+}
+
+type Query {
+    "The caller's own identity, roles and effective permissions."
+    me: User!
+
+    "A live authorization decision, read from the database rather than the session snapshot."
+    amIPermitted(permission: String!): AuthorizationDecision!
+
+    users: [User!]!
+    user(username: String!): User!
+    roles: [Role!]!
+    role(code: String!): Role!
+    permissions: [Permission!]!
+    permission(code: String!): Permission!
+}
+
+type Mutation {
+    registerUser(username: String!, password: String!): User!
+    changeUserPassword(username: String!, password: String!): User!
+    deleteUser(username: String!): Boolean!
+    disableUser(username: String!): User!
+    enableUser(username: String!): User!
+    assignRole(username: String!, roleCode: String!): User!
+    revokeRole(username: String!, roleCode: String!): User!
+
+    createRole(code: String!, description: String!): Role!
+    updateRoleDescription(code: String!, description: String!): Role!
+    deleteRole(code: String!): Boolean!
+    grantPermission(roleCode: String!, code: String!): Role!
+    revokePermission(roleCode: String!, code: String!): Role!
+
+    definePermission(code: String!, description: String!): Permission!
+    updatePermissionDescription(code: String!, description: String!): Permission!
+    deletePermission(code: String!): Boolean!
+}
